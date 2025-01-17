@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from 'react';
 
-const Tooltip = ({ message, delay = 0 }) => {
+// Define the props for Tooltip
+interface TooltipProps {
+  message: string;
+  delay?: number; // Optional because it has a default value
+}
+
+const Tooltip: React.FC<TooltipProps> = ({ message, delay = 0 }) => {
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
@@ -20,7 +26,7 @@ const Tooltip = ({ message, delay = 0 }) => {
         max-w-xs
       `}
       style={{
-        top: `${Math.max(50 + delay/20, 20)}px`,
+        top: `${Math.max(50 + delay / 20, 20)}px`,
       }}
     >
       <p className="text-gray-800">{message}</p>
@@ -28,7 +34,8 @@ const Tooltip = ({ message, delay = 0 }) => {
   );
 };
 
-const TooltipManager = () => {
+// Define the TooltipManager component
+const TooltipManager: React.FC = () => {
   const tips = [
     { message: "👋 Welcome! Click any flashcard to flip it over", delay: 1000 },
     { message: "✨ Rate cards as Easy, Medium, or Hard to track your progress", delay: 3000 },
@@ -40,6 +47,7 @@ const TooltipManager = () => {
   return (
     <div className="fixed left-0 top-0 z-50">
       {tips.map((tip, index) => (
+        // Pass key to the Tooltip wrapper, not as part of Tooltip props
         <Tooltip key={index} message={tip.message} delay={tip.delay} />
       ))}
     </div>

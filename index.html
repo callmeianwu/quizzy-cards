@@ -28,6 +28,12 @@
             opacity: 1;
         }
 
+        .flashcard,
+.controls.study-mode,
+.stats.study-mode {
+    display: none;
+}
+
         .tooltip-container {
             position: fixed;
             left: 0;
@@ -44,7 +50,6 @@
             background-color: #f5f5f5;
         }
 
-        /* Add styles for import/export buttons */
         .import-export-controls {
             display: flex;
             gap: 1rem;
@@ -80,6 +85,14 @@
         }
 
         .study-mode .flashcard {
+            display: block;
+        }
+
+        .study-mode .controls.study-mode {
+            display: flex;
+        }
+
+        .study-mode .stats.study-mode {
             display: block;
         }
 
@@ -167,7 +180,7 @@
             margin-top: 20px;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 15px;
         }
 
         input, textarea {
@@ -175,6 +188,7 @@
             border: 1px solid #ddd;
             border-radius: 5px;
             font-size: 1em;
+            background-color: #cecece;
         }
 
         .section-title {

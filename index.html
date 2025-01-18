@@ -706,49 +706,7 @@ document.querySelector('.import-export-controls').innerHTML = `
             saveSets();
         }
 
-        class TooltipSystem {
-    constructor() {
-        this.container = document.querySelector('.tooltip-container');
-        this.tooltips = [
-            { message: "👋 Welcome! Click any flashcard to flip it over", delay: 1000 },
-            { message: "✨ Rate cards as Easy, Medium, or Hard to track your progress", delay: 3000 },
-            { message: "📚 Create your own sets using Q: and A: format", delay: 5000 },
-            { message: "🎯 Master cards by getting them right multiple times", delay: 7000 },
-            { message: "🔄 Use the restart button to practice again", delay: 9000 }
-        ];
-    }
-
-    createTooltip(message, topPosition) {
-        const tooltip = document.createElement('div');
-        tooltip.className = 'tooltip';
-        tooltip.textContent = message;
-        tooltip.style.top = `${topPosition}px`;
-        this.container.appendChild(tooltip);
-        
-        // Force reflow to ensure transition works
-        tooltip.offsetHeight;
-        
-        // Show tooltip
-        setTimeout(() => {
-            tooltip.classList.add('visible');
-        }, 50);
-
-        // Remove tooltip after 5 seconds
-        setTimeout(() => {
-            tooltip.classList.remove('visible');
-            setTimeout(() => tooltip.remove(), 400);
-        }, 5000);
-    }
-
-    showSequentially() {
-        this.tooltips.forEach((tip, index) => {
-            setTimeout(() => {
-                const topPosition = 60 + (index * 70);
-                this.createTooltip(tip.message, topPosition);
-            }, tip.delay);
-        });
-    }
-}
+         
 
 function initialize() {
     loadSavedSets();
@@ -760,24 +718,7 @@ function initialize() {
         importButton.addEventListener('click', importSet);
     }
 
-    // Show welcome tooltips on page load
-    const tooltipSystem = new TooltipSystem();
-    tooltipSystem.tooltips = [
-        { message: "👋 Welcome to Flashcards! Let's get started", delay: 1000 },
-        { message: "📝 Create your first set using the form below", delay: 3000 },
-        { message: "💡 Use Q: for questions and A: for answers", delay: 5000 },
-        { message: "📚 Already have a set? Click 'Load Set' to import", delay: 7000 },
-        { message: "▶️ Click 'Study Mode' when you're ready to begin", delay: 9000 }
-    ];
-    tooltipSystem.showSequentially();
-
-    // Add different tooltips for study mode
-    window.studyModeTooltips = [
-        { message: "👆 Click any flashcard to flip it over", delay: 1000 },
-        { message: "✨ Rate cards as Easy, Medium, or Hard to track progress", delay: 3000 },
-        { message: "🎯 Master cards by getting them right multiple times", delay: 5000 },
-        { message: "🔄 Use the restart button to practice again", delay: 7000 }
-    ];
+    
 }
 
 // Update startStudySet to use the study-specific tooltips

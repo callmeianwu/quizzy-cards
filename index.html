@@ -323,6 +323,261 @@
             border-radius: 25px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.2);
         }
+
+        /* Modern AI Section Styles */
+        .ai-fab {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #6e8efb, #a777e3);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            cursor: pointer;
+            z-index: 100;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .ai-fab:hover {
+            transform: translateY(-5px) scale(1.05);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+        }
+        
+        .ai-section {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255,255,255,0.97);
+            z-index: 200;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s ease;
+            padding: 2rem;
+            box-sizing: border-box;
+            overflow-y: auto;
+        }
+        
+        .ai-section.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+        
+        .ai-container {
+            max-width: 800px;
+            width: 100%;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            padding: 30px;
+            position: relative;
+        }
+        
+        .ai-close {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: transparent;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #666;
+            transition: color 0.3s;
+        }
+        
+        .ai-close:hover {
+            color: #ff5b5b;
+        }
+        
+        .ai-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .ai-header h2 {
+            color: #333;
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+        
+        .ai-header p {
+            color: #666;
+            font-size: 16px;
+        }
+        
+        .ai-form {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .ai-input-group {
+            position: relative;
+        }
+        
+        .ai-label {
+            position: absolute;
+            top: -10px;
+            left: 15px;
+            background: white;
+            padding: 0 10px;
+            font-size: 14px;
+            color: #6e8efb;
+        }
+        
+        .ai-input, .ai-textarea {
+            width: 100%;
+            padding: 15px 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+            background-color: white;
+            box-sizing: border-box;
+        }
+        
+        .ai-input:focus, .ai-textarea:focus {
+            border-color: #6e8efb;
+            outline: none;
+        }
+        
+        .ai-textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+        
+        .ai-btn {
+            background: linear-gradient(135deg, #6e8efb, #a777e3);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            padding: 15px 30px;
+            font-size: 18px;
+            cursor: pointer;
+            transition: transform 0.3s, box-shadow 0.3s;
+            margin-top: 10px;
+            display: inline-block;
+        }
+        
+        .ai-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 5px 15px rgba(110, 142, 251, 0.4);
+        }
+        
+        .ai-count-selector {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .ai-count-btn {
+            padding: 10px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .ai-count-btn.active {
+            background: #6e8efb;
+            color: white;
+            border-color: #6e8efb;
+        }
+        
+        .ai-progress {
+            text-align: center;
+            margin-top: 30px;
+            display: none;
+        }
+        
+        .ai-progress.active {
+            display: block;
+        }
+        
+        .ai-loading-animation {
+            position: relative;
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 20px;
+        }
+        
+        .ai-loading-animation:after {
+            content: "";
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            border: 6px solid #f3f3f3;
+            border-top: 6px solid #6e8efb;
+            animation: ai-spin 1.5s linear infinite;
+        }
+        
+        @keyframes ai-spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .ai-success {
+            color: #28a745;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 20px;
+            display: none;
+        }
+        
+        .ai-success i {
+            font-size: 60px;
+            margin-bottom: 10px;
+        }
+        
+        /* AI Button attention animation */
+        @keyframes ai-attention {
+            0% { transform: scale(1); box-shadow: 0 4px 15px rgba(0,0,0,0.15); }
+            20% { transform: scale(1.1); box-shadow: 0 0 20px rgba(110, 142, 251, 0.6); }
+            40% { transform: scale(1); box-shadow: 0 4px 15px rgba(0,0,0,0.15); }
+            60% { transform: scale(1.08); box-shadow: 0 0 20px rgba(110, 142, 251, 0.6); }
+            80% { transform: scale(1); box-shadow: 0 4px 15px rgba(0,0,0,0.15); }
+            100% { transform: scale(1.05); box-shadow: 0 0 15px rgba(110, 142, 251, 0.3); }
+        }
+        
+        .ai-fab.attention {
+            animation: ai-attention 2.5s ease-in-out forwards;
+        }
+        
+        /* Subtle tooltip for the AI button */
+        .ai-fab-tooltip {
+            position: absolute;
+            left: 75px;
+            background: white;
+            padding: 8px 15px;
+            border-radius: 6px;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+            white-space: nowrap;
+            opacity: 0;
+            transform: translateX(-20px);
+            transition: all 0.4s ease;
+            pointer-events: none;
+            color: black;
+        }
+        
+        .ai-fab.attention .ai-fab-tooltip {
+            opacity: 1;
+            transform: translateX(0);
+        }
     </style>
 </head>
 <body>
@@ -379,9 +634,100 @@ A: 4"></textarea>
 
         <button class="mode-toggle" onclick="toggleMode()" id="modeToggle">Study Mode</button>
     </div>
+    
+    <!-- Floating AI button -->
+    <div class="ai-fab" onclick="toggleAiSection()">
+        <i class="fas fa-robot"></i>
+        <div class="ai-fab-tooltip">Try AI flashcards!</div>
+    </div>
+    
+    <!-- Modern AI Section -->
+    <div id="aiSection" class="ai-section">
+        <div class="ai-container">
+            <button class="ai-close" onclick="toggleAiSection()">
+                <i class="fas fa-times"></i>
+            </button>
+            
+            <div class="ai-header">
+                <h2>AI Study Set Generator</h2>
+                <p>Create perfect flashcards in seconds with artificial intelligence</p>
+            </div>
+            
+            <div class="ai-form">
+                <div class="ai-input-group">
+                    <span class="ai-label">API Key</span>
+                    <input type="password" id="aiApiKey" class="ai-input" placeholder="Enter your OpenAI API key">
+                    <button class="ai-btn" style="margin-top:10px" onclick="saveApiKey()">Save Key</button>
+                </div>
+                
+                <div class="ai-input-group">
+                    <span class="ai-label">Set Title</span>
+                    <input type="text" id="aiSetTitle" class="ai-input" placeholder="Enter a title for your flashcard set">
+                </div>
+                
+                <div class="ai-input-group">
+                    <span class="ai-label">Study Topic</span>
+                    <textarea id="aiPrompt" class="ai-textarea" 
+                        placeholder="Describe what you want to study. For example: 'Create flashcards about basic quantum physics concepts' or 'Generate questions about modern world history'"></textarea>
+                </div>
+                
+                <div class="ai-input-group">
+                    <span class="ai-label">Number of Cards</span>
+                    <div class="ai-count-selector">
+                        <button class="ai-count-btn" data-count="5">5</button>
+                        <button class="ai-count-btn active" data-count="10">10</button>
+                        <button class="ai-count-btn" data-count="15">15</button>
+                        <button class="ai-count-btn" data-count="20">20</button>
+                    </div>
+                </div>
+                
+                <button class="ai-btn" onclick="generateCardsWithAI()">Generate My Flashcards</button>
+            </div>
+            
+            <div class="ai-progress" id="aiProgress">
+                <div class="ai-loading-animation"></div>
+                <p>Creating your perfect study cards...</p>
+            </div>
+            
+            <div class="ai-success" id="aiSuccess">
+                <i class="fas fa-check-circle"></i>
+                <p>Your flashcards are ready!</p>
+            </div>
+        </div>
+    </div>
 
     <script src="scripts/card.js"></script>
     <script src="scripts/card-set.js"></script>
-   
+    <script src="scripts/ai-generator.js"></script>
+    <script>
+        // AI section toggle functionality
+        function toggleAiSection() {
+            const aiSection = document.getElementById('aiSection');
+            aiSection.classList.toggle('active');
+        }
+        
+        // Set up card count selector
+        document.querySelectorAll('.ai-count-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.ai-count-btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+            });
+        });
+        
+        // AI button attention effect
+        document.addEventListener('DOMContentLoaded', function() {
+            // Adding a slight delay before showing the effect for better user experience
+            setTimeout(function() {
+                const aiButton = document.querySelector('.ai-fab');
+                aiButton.classList.add('attention');
+                
+                // Remove the effect after animation completes
+                setTimeout(function() {
+                    aiButton.classList.remove('attention');
+                }, 4000);
+            }, 1000);
+        });
+    </script>
 </body>
 </html>
+``` 

@@ -698,6 +698,7 @@ A: 4"></textarea>
 
     <script src="scripts/card.js"></script>
     <script src="scripts/card-set.js"></script>
+<<<<<<< HEAD
     <script src="scripts/ai-generator.js"></script>
     <script>
         // AI section toggle functionality
@@ -728,6 +729,45 @@ A: 4"></textarea>
             }, 1000);
         });
     </script>
+=======
+
+    <!-- This is for pressing enter for "Q:" or "A:" -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const textarea = document.getElementById('cardsList');
+            let lastLineStarted = 'Q'; 
+        
+            textarea.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault(); 
+                    
+                    const cursorPosition = this.selectionStart;
+                    const content = this.value;
+                    
+                    const textBeforeCursor = content.substring(0, cursorPosition);
+                    const textAfterCursor = content.substring(cursorPosition);
+                    
+                    // Determine whether to add Q: or A:
+                    const prefix = lastLineStarted === 'Q' ? 'A: ' : 'Q: ';
+                    lastLineStarted = lastLineStarted === 'Q' ? 'A' : 'Q';
+                    
+                    this.value = textBeforeCursor + '\n' + prefix + textAfterCursor;
+                    
+                    // Move cursor after the prefix
+                    const newPosition = cursorPosition + prefix.length + 1;
+                    this.setSelectionRange(newPosition, newPosition);
+                }
+            });
+        
+            textarea.addEventListener('focus', function() {
+                if (this.value.trim() === '') {
+                    this.value = 'Q: ';
+                    this.setSelectionRange(3, 3);
+                }
+            });
+        });
+        </script>
+>>>>>>> 887bdd124d0f19e926641a03ba9b9a0b6d4f515c
 </body>
 </html>
 ``` 

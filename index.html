@@ -698,40 +698,7 @@ A: 4"></textarea>
 
     <script src="scripts/card.js"></script>
     <script src="scripts/card-set.js"></script>
-<<<<<<< HEAD
     <script src="scripts/ai-generator.js"></script>
-    <script>
-        // AI section toggle functionality
-        function toggleAiSection() {
-            const aiSection = document.getElementById('aiSection');
-            aiSection.classList.toggle('active');
-        }
-        
-        // Set up card count selector
-        document.querySelectorAll('.ai-count-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                document.querySelectorAll('.ai-count-btn').forEach(b => b.classList.remove('active'));
-                this.classList.add('active');
-            });
-        });
-        
-        // AI button attention effect
-        document.addEventListener('DOMContentLoaded', function() {
-            // Adding a slight delay before showing the effect for better user experience
-            setTimeout(function() {
-                const aiButton = document.querySelector('.ai-fab');
-                aiButton.classList.add('attention');
-                
-                // Remove the effect after animation completes
-                setTimeout(function() {
-                    aiButton.classList.remove('attention');
-                }, 4000);
-            }, 1000);
-        });
-    </script>
-=======
-
-    <!-- This is for pressing enter for "Q:" or "A:" -->
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const textarea = document.getElementById('cardsList');
@@ -766,8 +733,36 @@ A: 4"></textarea>
                 }
             });
         });
-        </script>
->>>>>>> 887bdd124d0f19e926641a03ba9b9a0b6d4f515c
+    </script>
+    <script>
+        // AI section toggle functionality
+        function toggleAiSection() {
+            const aiSection = document.getElementById('aiSection');
+            aiSection.classList.toggle('active');
+        }
+        
+        // Set up card count selector
+        document.querySelectorAll('.ai-count-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.ai-count-btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+            });
+        });
+        
+        // AI button attention effect
+        document.addEventListener('DOMContentLoaded', function() {
+            // Adding a slight delay before showing the effect for better user experience
+            setTimeout(function() {
+                const aiButton = document.querySelector('.ai-fab');
+                aiButton.classList.add('attention');
+                
+                // Remove the effect after animation completes
+                setTimeout(function() {
+                    aiButton.classList.remove('attention');
+                }, 4000);
+            }, 1000);
+        });
+    </script>
 </body>
 </html>
 ``` 

@@ -78,5 +78,5 @@ All your flashcard data is stored locally in your browser. Nothing is sent to an
 
 <div align="center">
   <p>Made with ❤️ for students and lifelong learners</p>
-  <p>© 2023 Quizzy</p>
+  <p>© 2025 Quizzy</p>
 </div>

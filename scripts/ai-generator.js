@@ -107,12 +107,26 @@ async function generateCardsWithAI() {
     const modernSuccess = document.getElementById('aiSuccess');
     const oldSpinner = document.getElementById('loadingSpinner');
     
-    if (modernProgress) modernProgress.style.display = 'block';
+    console.log('Loading status: Found progress element?', !!modernProgress);
+    
+    // Forcefully ensure the loading animation is displayed
+    if (modernProgress) {
+        console.log('Setting display to flex');
+        modernProgress.style.display = 'flex';
+        
+        // Make sure it's visible - force other properties too
+        modernProgress.style.opacity = '1';
+        modernProgress.style.visibility = 'visible';
+    }
+    
     if (modernSuccess) modernSuccess.style.display = 'none';
     if (oldSpinner) oldSpinner.style.display = 'flex';
     
     try {
+        console.log('Starting API request...');
         const cards = await fetchFlashcardsFromAI(apiKey, prompt, cardCount);
+        console.log('API request complete, cards received:', cards.length);
+        
         if (cards.length > 0) {
             createCardSetFromAI(title, cards);
             

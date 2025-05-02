@@ -1,6 +1,6 @@
 <div align="center">
   <img src="https://img.shields.io/badge/Quizzy-v1.0-brightgreen" alt="Quizzy Version" />
-  <h1>📚 Quizzy</h1>
+  <h1>📚 Quizzy Cards</h1>
   <p><strong>A modern, feature-rich flashcard application for effective studying</strong></p>
   <img src="https://img.shields.io/badge/HTML-5-orange" alt="HTML5" />
   <img src="https://img.shields.io/badge/CSS-3-blue" alt="CSS3" />

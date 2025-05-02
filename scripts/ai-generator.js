@@ -96,7 +96,9 @@ async function generateCardsWithAI() {
     const oldActiveBtn = document.querySelector('.count-btn.active');
     const newActiveBtn = document.querySelector('.ai-count-btn.active');
     
-    if (newActiveBtn) {
+    if (newActiveBtn && newActiveBtn.dataset.count === 'auto') {
+        cardCount = 'auto';
+    } else if (newActiveBtn) {
         cardCount = parseInt(newActiveBtn.dataset.count);
     } else if (oldActiveBtn) {
         cardCount = parseInt(oldActiveBtn.dataset.count);
@@ -191,16 +193,24 @@ async function generateCardsWithAI() {
 }
 
 async function fetchFlashcardsFromAI(apiKey, prompt, cardCount) {
-    const systemPrompt = `You are a helpful assistant that creates flashcards for studying. 
-    Generate exactly ${cardCount} flashcards in the exact format shown below, with each card having a question and answer:
-    
-    Q: [Question 1]
-    A: [Answer 1]
-    
-    Q: [Question 2]
-    A: [Answer 2]
-    
-    Only respond with the flashcards in this exact format. Make the content accurate, educational, and useful for studying.`;
+    let systemPrompt;
+    if (cardCount === 'auto') {
+        systemPrompt = `You are a helpful assistant creating an appropriate number of flashcards based on the user’s topic.
+        Each card must have a question and answer in the format:
+        
+        Q: [Question]
+        A: [Answer]`;
+    } else {
+        systemPrompt = `You are a helpful assistant that creates flashcards. Generate exactly ${cardCount} flashcards in the exact format shown below, with each card having a question and answer:
+        
+        Q: [Question 1]
+        A: [Answer 1]
+        
+        Q: [Question 2]
+        A: [Answer 2]
+        
+        Only respond with the flashcards in this exact format. Make the content accurate, educational, and useful for studying.`;
+    }
     
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',

@@ -65,7 +65,6 @@ function cacheDom() {
     dom.cardQuestion = document.getElementById("cardQuestion");
     dom.cardAnswer = document.getElementById("cardAnswer");
     dom.remainingCount = document.getElementById("remainingCount");
-    dom.masteredCount = document.getElementById("masteredCount");
     dom.studyProgressLabel = document.getElementById("studyProgressLabel");
     dom.studyProgressFill = document.getElementById("studyProgressFill");
     dom.studySetTitle = document.getElementById("studySetTitle");
@@ -130,7 +129,8 @@ function exposeAppBridge() {
         populateGeneratedDraft,
         showToast,
         setInlineMessage,
-        clearInlineMessage
+        clearInlineMessage,
+        getStudyCardContext
     };
 }
 
@@ -795,13 +795,13 @@ function renderStudyState() {
         dom.cardQuestion.textContent = "";
         dom.cardAnswer.textContent = "";
         dom.remainingCount.textContent = "0";
-        dom.masteredCount.textContent = "0";
         dom.studyProgressLabel.textContent = "Ready to begin";
         dom.studyProgressFill.style.width = "0%";
         dom.studySummary.hidden = true;
         dom.studyActions.hidden = false;
         dom.studyHint.hidden = false;
         dom.flashcard.classList.remove("flipped");
+        dispatchStudyContextChange(null);
         return;
     }
 
@@ -811,7 +811,6 @@ function renderStudyState() {
 
     dom.studySetTitle.textContent = set.title;
     dom.remainingCount.textContent = String(remainingCards);
-    dom.masteredCount.textContent = String(state.masteredCards);
     dom.studyProgressFill.style.width = `${progressRatio * 100}%`;
 
     if (state.studyComplete) {
@@ -823,6 +822,7 @@ function renderStudyState() {
         dom.studyActions.hidden = true;
         dom.studySummary.hidden = false;
         dom.studySummaryText.textContent = `You mastered ${totalCards} card${totalCards === 1 ? "" : "s"} in this round.`;
+        dispatchStudyContextChange(null);
         return;
     }
 
@@ -841,6 +841,7 @@ function renderStudyState() {
     dom.studyHint.hidden = false;
     dom.studyActions.hidden = false;
     dom.studySummary.hidden = true;
+    dispatchStudyContextChange(getStudyCardContext());
 }
 
 function handleComposerFocus() {
@@ -948,4 +949,32 @@ function sanitizeFilename(value) {
 
 function getDateStamp() {
     return new Date().toISOString().split("T")[0];
+}
+
+function getStudyCardContext() {
+    const set = getCurrentSet();
+
+    if (!set || state.studyComplete) {
+        return null;
+    }
+
+    const card = set.cards[state.currentCardIndex];
+
+    if (!card) {
+        return null;
+    }
+
+    return {
+        setTitle: set.title,
+        cardIndex: state.currentCardIndex,
+        totalCards: set.cards.length,
+        question: card.question,
+        answer: card.answer
+    };
+}
+
+function dispatchStudyContextChange(context) {
+    document.dispatchEvent(new CustomEvent("quizzy:study-card-change", {
+        detail: context
+    }));
 }

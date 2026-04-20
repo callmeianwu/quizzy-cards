@@ -1,4 +1,12 @@
 const AI_STORAGE_KEY = "openai_api_key";
+const AI_CHAT_MODEL = "gpt-4o-mini";
+
+const studyHelper = {
+    contextKey: "",
+    isLoading: false,
+    isOpen: false,
+    dom: {}
+};
 
 document.addEventListener("DOMContentLoaded", initializeAiGenerator);
 
@@ -17,7 +25,57 @@ function initializeAiGenerator() {
         });
     });
 
+    initializeStudyHelper();
     updateSavedKeyStatus();
+}
+
+function initializeStudyHelper() {
+    studyHelper.dom.container = document.getElementById("studyAiHelper");
+
+    if (!studyHelper.dom.container) {
+        return;
+    }
+
+    studyHelper.dom.status = document.getElementById("studyAiStatus");
+    studyHelper.dom.questionInput = document.getElementById("studyAiQuestion");
+    studyHelper.dom.askButton = document.getElementById("askStudyAiBtn");
+    studyHelper.dom.response = document.getElementById("studyAiResponse");
+    studyHelper.dom.toggleButton = document.getElementById("toggleStudyAiBtn");
+
+    studyHelper.dom.toggleButton.addEventListener("click", toggleStudyHelperVisibility);
+    studyHelper.dom.askButton.addEventListener("click", askStudyHelper);
+    studyHelper.dom.questionInput.addEventListener("keydown", handleStudyHelperKeydown);
+    document.addEventListener("quizzy:study-card-change", handleStudyContextChange);
+
+    syncStudyHelperWithContext(getCurrentStudyContext());
+}
+
+function handleStudyHelperKeydown(event) {
+    if (event.key !== "Enter" || (!event.ctrlKey && !event.metaKey)) {
+        return;
+    }
+
+    event.preventDefault();
+    askStudyHelper();
+}
+
+function handleStudyContextChange(event) {
+    syncStudyHelperWithContext(event.detail || null);
+}
+
+function toggleStudyHelperVisibility() {
+    const context = getCurrentStudyContext();
+
+    if (!context) {
+        return;
+    }
+
+    studyHelper.isOpen = !studyHelper.isOpen;
+    renderStudyHelperVisibility();
+
+    if (studyHelper.isOpen && !studyHelper.dom.questionInput.disabled) {
+        studyHelper.dom.questionInput.focus();
+    }
 }
 
 function saveApiKey() {
@@ -52,6 +110,8 @@ function updateSavedKeyStatus() {
         status.textContent = "No API key saved in this browser yet.";
         input.placeholder = "Paste your API key";
     }
+
+    syncStudyHelperWithContext(getCurrentStudyContext());
 }
 
 async function generateCardsWithAI() {
@@ -111,11 +171,118 @@ async function generateCardsWithAI() {
     }
 }
 
+async function askStudyHelper() {
+    if (!studyHelper.dom.container || studyHelper.isLoading) {
+        return;
+    }
+
+    const apiKey = localStorage.getItem(AI_STORAGE_KEY);
+    const learnerQuestion = studyHelper.dom.questionInput.value.trim();
+    const context = getCurrentStudyContext();
+
+    if (!apiKey) {
+        setStudyHelperStatus("Save your OpenAI API key in AI Generate to use this helper.", "warning");
+        studyHelper.dom.questionInput.disabled = true;
+        studyHelper.dom.askButton.disabled = true;
+        return;
+    }
+
+    if (!context) {
+        setStudyHelperStatus("Open a study card to ask the AI for help.", "warning");
+        return;
+    }
+
+    if (!learnerQuestion) {
+        setStudyHelperStatus("Type a question for this card first.", "warning");
+        studyHelper.dom.questionInput.focus();
+        return;
+    }
+
+    const requestContextKey = buildStudyContextKey(context);
+
+    studyHelper.isLoading = true;
+    studyHelper.dom.questionInput.disabled = true;
+    studyHelper.dom.askButton.disabled = true;
+    studyHelper.dom.askButton.textContent = "Thinking...";
+    setStudyHelperStatus("Reading this card and preparing a quick explanation...", "info");
+
+    try {
+        const answer = await fetchStudyHelpFromAI(apiKey, learnerQuestion, context);
+
+        if (studyHelper.contextKey !== requestContextKey) {
+            return;
+        }
+
+        studyHelper.dom.response.textContent = answer;
+        studyHelper.dom.response.hidden = false;
+        setStudyHelperStatus(`Answer ready for card ${context.cardIndex + 1} of ${context.totalCards}.`, "success");
+    } catch (error) {
+        console.error("Study helper failed.", error);
+        setStudyHelperStatus(`Could not get AI help: ${error.message}`, "error");
+    } finally {
+        studyHelper.isLoading = false;
+        studyHelper.dom.askButton.textContent = "Ask AI";
+        syncStudyHelperWithContext(getCurrentStudyContext());
+    }
+}
+
 async function fetchFlashcardsFromAI(apiKey, prompt, cardCount) {
     const countInstruction = cardCount === "auto"
         ? "Generate the number of flashcards that best fits the topic."
         : `Generate exactly ${cardCount} flashcards.`;
 
+    const content = await requestChatCompletion(apiKey, [
+        {
+            role: "system",
+            content: [
+                "You create accurate study flashcards.",
+                countInstruction,
+                "Return only flashcards in this exact format:",
+                "Q: [Question]",
+                "A: [Answer]"
+            ].join("\n")
+        },
+        {
+            role: "user",
+            content: prompt
+        }
+    ], 0.6);
+
+    return parseCardsFromResponse(content);
+}
+
+async function fetchStudyHelpFromAI(apiKey, learnerQuestion, context) {
+    const content = await requestChatCompletion(apiKey, [
+        {
+            role: "system",
+            content: [
+                "You are a concise study helper inside a flashcard app.",
+                "Use the provided card question and card answer as the anchor context for every reply.",
+                "Keep the response practical and easy to study.",
+                "When useful, include one short example, analogy, or memory trick.",
+                "Do not ignore or contradict the card answer unless the user explicitly asks you to critique it."
+            ].join("\n")
+        },
+        {
+            role: "user",
+            content: [
+                `Set title: ${context.setTitle}`,
+                `Card number: ${context.cardIndex + 1} of ${context.totalCards}`,
+                `Card question: ${context.question}`,
+                `Card answer: ${context.answer}`,
+                `Learner question: ${learnerQuestion}`
+            ].join("\n")
+        }
+    ], 0.4);
+
+    if (!content.trim()) {
+        throw new Error("The AI response came back empty.");
+    }
+
+    return content.trim();
+}
+
+async function requestChatCompletion(apiKey, messages, temperature) {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -123,24 +290,9 @@ async function fetchFlashcardsFromAI(apiKey, prompt, cardCount) {
             Authorization: `Bearer ${apiKey}`
         },
         body: JSON.stringify({
-            model: "gpt-4o-mini",
-            temperature: 0.6,
-            messages: [
-                {
-                    role: "system",
-                    content: [
-                        "You create accurate study flashcards.",
-                        countInstruction,
-                        "Return only flashcards in this exact format:",
-                        "Q: [Question]",
-                        "A: [Answer]"
-                    ].join("\n")
-                },
-                {
-                    role: "user",
-                    content: prompt
-                }
-            ]
+            model: AI_CHAT_MODEL,
+            temperature,
+            messages
         })
     });
 
@@ -162,7 +314,79 @@ async function fetchFlashcardsFromAI(apiKey, prompt, cardCount) {
         ? data.choices[0].message.content
         : "";
 
-    return parseCardsFromResponse(content);
+    return typeof content === "string" ? content : "";
+}
+
+function syncStudyHelperWithContext(context) {
+    if (!studyHelper.dom.container) {
+        return;
+    }
+
+    const hasSavedKey = Boolean(localStorage.getItem(AI_STORAGE_KEY));
+    const nextContextKey = context ? buildStudyContextKey(context) : "";
+    const contextChanged = nextContextKey !== studyHelper.contextKey;
+
+    studyHelper.contextKey = nextContextKey;
+
+    if (contextChanged) {
+        studyHelper.dom.questionInput.value = "";
+        studyHelper.dom.response.hidden = true;
+        studyHelper.dom.response.textContent = "";
+    }
+
+    if (!context) {
+        studyHelper.isOpen = false;
+        studyHelper.dom.questionInput.disabled = true;
+        studyHelper.dom.askButton.disabled = true;
+        studyHelper.dom.askButton.textContent = "Ask AI";
+        setStudyHelperStatus("Finish or restart a study round to ask about another card.", "info");
+        renderStudyHelperVisibility();
+        return;
+    }
+
+    if (!hasSavedKey) {
+        studyHelper.dom.questionInput.disabled = true;
+        studyHelper.dom.askButton.disabled = true;
+        studyHelper.dom.askButton.textContent = "Ask AI";
+        setStudyHelperStatus("Save your OpenAI API key in AI Generate to use this helper.", "warning");
+        renderStudyHelperVisibility();
+        return;
+    }
+
+    if (studyHelper.isLoading) {
+        renderStudyHelperVisibility();
+        return;
+    }
+
+    studyHelper.dom.questionInput.disabled = false;
+    studyHelper.dom.askButton.disabled = false;
+    studyHelper.dom.askButton.textContent = "Ask AI";
+
+    if (contextChanged || !studyHelper.dom.response.textContent.trim()) {
+        setStudyHelperStatus(
+            `Card ${context.cardIndex + 1} of ${context.totalCards} is loaded. Ask for a simpler explanation, example, or memory trick.`,
+            "info"
+        );
+    }
+
+    renderStudyHelperVisibility();
+}
+
+function getCurrentStudyContext() {
+    if (!window.QuizzyApp || typeof window.QuizzyApp.getStudyCardContext !== "function") {
+        return null;
+    }
+
+    return window.QuizzyApp.getStudyCardContext();
+}
+
+function buildStudyContextKey(context) {
+    return [
+        context.setTitle,
+        context.cardIndex,
+        context.question,
+        context.answer
+    ].join("::");
 }
 
 function parseCardsFromResponse(content) {
@@ -191,6 +415,28 @@ function parseCardsFromResponse(content) {
     }
 
     return cards;
+}
+
+function setStudyHelperStatus(message, tone = "info") {
+    if (!studyHelper.dom.status) {
+        return;
+    }
+
+    studyHelper.dom.status.dataset.tone = tone;
+    studyHelper.dom.status.textContent = message;
+}
+
+function renderStudyHelperVisibility() {
+    if (!studyHelper.dom.container || !studyHelper.dom.toggleButton) {
+        return;
+    }
+
+    const hasContext = Boolean(studyHelper.contextKey);
+
+    studyHelper.dom.toggleButton.disabled = !hasContext;
+    studyHelper.dom.toggleButton.textContent = studyHelper.isOpen ? "Hide AI Helper" : "Open AI Helper";
+    studyHelper.dom.toggleButton.setAttribute("aria-expanded", String(studyHelper.isOpen));
+    studyHelper.dom.container.hidden = !studyHelper.isOpen;
 }
 
 function setAiMessage(message, tone) {

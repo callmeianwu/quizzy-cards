@@ -234,7 +234,6 @@ A: 4"></textarea>
 
                     <div class="study-progress-row">
                         <span class="study-chip"><strong id="remainingCount">0</strong> remaining</span>
-                        <span class="study-chip"><strong id="masteredCount">0</strong> mastered</span>
                         <span class="study-chip" id="studyProgressLabel">Ready to begin</span>
                     </div>
 
@@ -268,6 +267,37 @@ A: 4"></textarea>
                         <button class="rating-btn medium" type="button" data-rating="2">Medium</button>
                         <button class="rating-btn easy" type="button" data-rating="3">Easy</button>
                     </div>
+
+                    <button class="study-helper-toggle" type="button" id="toggleStudyAiBtn" aria-expanded="false" aria-controls="studyAiHelper">
+                        Open AI Helper
+                    </button>
+
+                    <section class="study-ai-helper" id="studyAiHelper" aria-labelledby="studyAiTitle" hidden>
+                        <div class="study-ai-header">
+                            <div>
+                                <p class="section-kicker">AI helper</p>
+                                <h3 id="studyAiTitle">Ask about this card</h3>
+                            </div>
+                            <span class="study-ai-badge">Current card context</span>
+                        </div>
+
+                        <p class="study-ai-status" id="studyAiStatus">Save your OpenAI API key in AI Generate to use this helper.</p>
+
+                        <textarea
+                            id="studyAiQuestion"
+                            class="study-ai-input"
+                            rows="3"
+                            placeholder="Ask for a simpler explanation, an example, or a memory trick."
+                            aria-label="Ask AI about the current study card"
+                        ></textarea>
+
+                        <div class="study-ai-footer">
+                            <p class="helper-text">The AI gets this card's question and answer with your question.</p>
+                            <button class="secondary-btn compact-btn" type="button" id="askStudyAiBtn">Ask AI</button>
+                        </div>
+
+                        <div class="study-ai-response" id="studyAiResponse" hidden></div>
+                    </section>
 
                     <section class="study-summary" id="studySummary" hidden>
                         <p class="section-kicker">Session complete</p>

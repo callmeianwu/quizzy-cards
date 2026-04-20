@@ -7,469 +7,945 @@ class CardSet {
     }
 }
 
-let cardSets = [];
-let currentSet = null;
-let currentCardIndex = 0;
-let masteredCards = 0;
-let isStudyMode = false;
+const STORAGE_KEYS = {
+    sets: "flashcardSets",
+    uiPrefs: "quizzy_ui_prefs"
+};
 
-// Load saved sets from localStorage
-function loadSavedSets() {
-    const saved = localStorage.getItem('flashcardSets');
-    if (saved) {
-        cardSets = JSON.parse(saved);
-        updateSetList();
-    }
+const state = {
+    cardSets: [],
+    activePanel: "create-panel",
+    activeCreateTab: "manual",
+    currentSetIndex: -1,
+    currentCardIndex: -1,
+    masteredCards: 0,
+    studyComplete: false,
+    confirmAction: null
+};
+
+const dom = {};
+
+document.addEventListener("DOMContentLoaded", initializeApp);
+
+function initializeApp() {
+    cacheDom();
+    bindEvents();
+    restoreUiPrefs();
+    loadSavedSets();
+    renderDashboard();
+    renderStudyState();
+    exposeAppBridge();
 }
 
-// Save sets to localStorage
-function saveSets() {
-    localStorage.setItem('flashcardSets', JSON.stringify(cardSets));
+function cacheDom() {
+    dom.appShell = document.getElementById("appShell");
+    dom.studyView = document.getElementById("studyView");
+    dom.setTitle = document.getElementById("setTitle");
+    dom.cardsList = document.getElementById("cardsList");
+    dom.saveSetBtn = document.getElementById("saveSetBtn");
+    dom.exportAllSetsBtn = document.getElementById("exportAllSetsBtn");
+    dom.importTriggerBtn = document.getElementById("importTriggerBtn");
+    dom.importFileInput = document.getElementById("importFileInput");
+    dom.setList = document.getElementById("setList");
+    dom.libraryEmptyState = document.getElementById("libraryEmptyState");
+    dom.totalSetsStat = document.getElementById("totalSetsStat");
+    dom.totalCardsStat = document.getElementById("totalCardsStat");
+    dom.recentSetTitle = document.getElementById("recentSetTitle");
+    dom.recentSetMeta = document.getElementById("recentSetMeta");
+    dom.resumeRecentBtn = document.getElementById("resumeRecentBtn");
+    dom.manualFormMessage = document.getElementById("manualFormMessage");
+    dom.importMessage = document.getElementById("importMessage");
+    dom.aiFormMessage = document.getElementById("aiFormMessage");
+    dom.aiSuccess = document.getElementById("aiSuccess");
+    dom.panelSections = Array.from(document.querySelectorAll("[data-panel]"));
+    dom.navButtons = Array.from(document.querySelectorAll("[data-panel-target]"));
+    dom.createTabButtons = Array.from(document.querySelectorAll("[data-create-tab]"));
+    dom.createPanes = Array.from(document.querySelectorAll("[data-create-pane]"));
+    dom.flashcard = document.getElementById("flashcard");
+    dom.cardQuestion = document.getElementById("cardQuestion");
+    dom.cardAnswer = document.getElementById("cardAnswer");
+    dom.remainingCount = document.getElementById("remainingCount");
+    dom.masteredCount = document.getElementById("masteredCount");
+    dom.studyProgressLabel = document.getElementById("studyProgressLabel");
+    dom.studyProgressFill = document.getElementById("studyProgressFill");
+    dom.studySetTitle = document.getElementById("studySetTitle");
+    dom.studyHint = document.getElementById("studyHint");
+    dom.studyActions = document.getElementById("studyActions");
+    dom.ratingButtons = Array.from(document.querySelectorAll("[data-rating]"));
+    dom.exitStudyBtn = document.getElementById("exitStudyBtn");
+    dom.restartStudyBtn = document.getElementById("restartStudyBtn");
+    dom.studySummary = document.getElementById("studySummary");
+    dom.studySummaryText = document.getElementById("studySummaryText");
+    dom.studyAgainBtn = document.getElementById("studyAgainBtn");
+    dom.returnToLibraryBtn = document.getElementById("returnToLibraryBtn");
+    dom.toastStack = document.getElementById("toastStack");
+    dom.confirmDialog = document.getElementById("confirmDialog");
+    dom.confirmTitle = document.getElementById("confirmTitle");
+    dom.confirmMessage = document.getElementById("confirmMessage");
+    dom.confirmApproveBtn = document.getElementById("confirmApproveBtn");
+    dom.confirmCancelBtn = document.getElementById("confirmCancelBtn");
 }
 
-function createSet() {
-    const title = document.getElementById('setTitle').value.trim();
-    const text = document.getElementById('cardsList').value;
-    
-    if (!title) {
-        alert('Please enter a set title');
+function bindEvents() {
+    dom.navButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+            switchPanel(button.dataset.panelTarget);
+        });
+    });
+
+    dom.createTabButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+            switchCreateTab(button.dataset.createTab);
+        });
+    });
+
+    dom.saveSetBtn.addEventListener("click", createSet);
+    dom.cardsList.addEventListener("keydown", handleComposerKeydown);
+    dom.cardsList.addEventListener("focus", handleComposerFocus);
+    dom.exportAllSetsBtn.addEventListener("click", exportAllSets);
+    dom.importTriggerBtn.addEventListener("click", () => dom.importFileInput.click());
+    dom.importFileInput.addEventListener("change", handleImportChange);
+    dom.setList.addEventListener("click", handleSetListClick);
+    dom.resumeRecentBtn.addEventListener("click", handleResumeRecent);
+    dom.flashcard.addEventListener("click", flipFlashcard);
+    dom.ratingButtons.forEach((button) => {
+        button.addEventListener("click", () => rateCard(Number(button.dataset.rating)));
+    });
+    dom.exitStudyBtn.addEventListener("click", () => exitStudyMode("library-panel"));
+    dom.restartStudyBtn.addEventListener("click", restartSession);
+    dom.studyAgainBtn.addEventListener("click", restartSession);
+    dom.returnToLibraryBtn.addEventListener("click", () => exitStudyMode("library-panel"));
+    dom.confirmCancelBtn.addEventListener("click", closeConfirmDialog);
+    dom.confirmApproveBtn.addEventListener("click", approveConfirmDialog);
+
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !dom.confirmDialog.hidden) {
+            closeConfirmDialog();
+        }
+    });
+}
+
+function exposeAppBridge() {
+    window.QuizzyApp = {
+        populateGeneratedDraft,
+        showToast,
+        setInlineMessage,
+        clearInlineMessage
+    };
+}
+
+function restoreUiPrefs() {
+    const savedPrefs = localStorage.getItem(STORAGE_KEYS.uiPrefs);
+
+    if (!savedPrefs) {
         return;
     }
 
-    const cards = [];
-    const lines = text.split('\n');
-    
-    for (let i = 0; i < lines.length - 1; i++) {
-        if (lines[i].startsWith('Q:') && lines[i + 1].startsWith('A:')) {
-            const question = lines[i].substring(2).trim();
-            const answer = lines[i + 1].substring(2).trim();
-            cards.push(new Card(question, answer));
-            i++;
+    try {
+        const parsed = JSON.parse(savedPrefs);
+        state.activePanel = parsed.activePanel === "library-panel" ? "library-panel" : "create-panel";
+        state.activeCreateTab = ["manual", "ai", "import"].includes(parsed.activeCreateTab) ? parsed.activeCreateTab : "manual";
+    } catch (error) {
+        console.error("Unable to parse UI preferences.", error);
+    }
+}
+
+function saveUiPrefs() {
+    const payload = {
+        activePanel: state.activePanel,
+        activeCreateTab: state.activeCreateTab
+    };
+
+    localStorage.setItem(STORAGE_KEYS.uiPrefs, JSON.stringify(payload));
+}
+
+function loadSavedSets() {
+    const savedSets = localStorage.getItem(STORAGE_KEYS.sets);
+
+    if (!savedSets) {
+        state.cardSets = [];
+        return;
+    }
+
+    try {
+        const parsedSets = JSON.parse(savedSets);
+        state.cardSets = Array.isArray(parsedSets) ? parsedSets.map(hydrateCardSet) : [];
+    } catch (error) {
+        console.error("Unable to parse saved flashcard sets.", error);
+        state.cardSets = [];
+        showToast("Saved data could not be loaded cleanly.", "warning");
+    }
+}
+
+function hydrateCardSet(rawSet) {
+    const cards = Array.isArray(rawSet.cards) ? rawSet.cards.map(hydrateCard) : [];
+    const set = new CardSet(rawSet.title || "Untitled Set", cards);
+    set.created = rawSet.created ? new Date(rawSet.created) : new Date();
+    set.lastStudied = rawSet.lastStudied ? new Date(rawSet.lastStudied) : null;
+    return set;
+}
+
+function hydrateCard(rawCard) {
+    const card = new Card(rawCard.question || "", rawCard.answer || "");
+    card.level = Number(rawCard.level) || 0;
+    card.attempts = Number(rawCard.attempts) || 0;
+    card.mastered = Boolean(rawCard.mastered);
+    card.nextReview = rawCard.nextReview ? new Date(rawCard.nextReview) : new Date();
+    return card;
+}
+
+function saveSets() {
+    localStorage.setItem(STORAGE_KEYS.sets, JSON.stringify(state.cardSets));
+}
+
+function switchPanel(panelId) {
+    if (!["create-panel", "library-panel"].includes(panelId)) {
+        return;
+    }
+
+    state.activePanel = panelId;
+    renderPanelVisibility();
+    saveUiPrefs();
+}
+
+function switchCreateTab(tabId) {
+    if (!["manual", "ai", "import"].includes(tabId)) {
+        return;
+    }
+
+    state.activeCreateTab = tabId;
+    renderCreateTabs();
+    saveUiPrefs();
+}
+
+function renderDashboard() {
+    renderPanelVisibility();
+    renderCreateTabs();
+    renderSetList();
+    updateDashboardStats();
+    updateRecentActivity();
+}
+
+function renderPanelVisibility() {
+    dom.panelSections.forEach((section) => {
+        const isActive = section.id === state.activePanel;
+        section.classList.toggle("active", isActive);
+        section.hidden = !isActive;
+    });
+
+    dom.navButtons.forEach((button) => {
+        if (button.classList.contains("nav-pill")) {
+            button.classList.toggle("active", button.dataset.panelTarget === state.activePanel);
         }
+    });
+}
+
+function renderCreateTabs() {
+    dom.createTabButtons.forEach((button) => {
+        const isActive = button.dataset.createTab === state.activeCreateTab;
+        button.classList.toggle("active", isActive);
+        button.setAttribute("aria-selected", String(isActive));
+    });
+
+    dom.createPanes.forEach((pane) => {
+        const isActive = pane.dataset.createPane === state.activeCreateTab;
+        pane.classList.toggle("active", isActive);
+        pane.hidden = !isActive;
+    });
+}
+
+function createSet() {
+    clearInlineMessage(dom.manualFormMessage);
+    clearInlineMessage(dom.importMessage);
+    clearInlineMessage(dom.aiFormMessage);
+
+    const title = dom.setTitle.value.trim();
+    const cards = parseCardsFromText(dom.cardsList.value);
+
+    if (!title) {
+        setInlineMessage(dom.manualFormMessage, "Give your set a title before saving it.", "error");
+        dom.setTitle.focus();
+        return;
     }
 
     if (cards.length === 0) {
-        alert('Please enter at least one valid question-answer pair');
+        setInlineMessage(dom.manualFormMessage, "Add at least one valid `Q:` / `A:` pair before saving.", "error");
+        dom.cardsList.focus();
         return;
     }
 
     const newSet = new CardSet(title, cards);
-    cardSets.push(newSet);
+    state.cardSets.push(newSet);
     saveSets();
-    updateSetList();
 
-    // Clear form
-    document.getElementById('setTitle').value = '';
-    document.getElementById('cardsList').value = '';
+    dom.setTitle.value = "";
+    dom.cardsList.value = "";
+    dom.aiSuccess.hidden = true;
+
+    renderDashboard();
+    switchPanel("library-panel");
+    showToast("Set saved to your library.", "success");
 }
 
+function parseCardsFromText(text) {
+    const lines = text
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
 
-// Set up import/export event listeners
-document.getElementById('importSet').addEventListener('click', importSet);
-document.getElementById('exportSet').addEventListener('click', exportSet);
+    const cards = [];
 
-function exportSet() {
-    // If no sets exist, show error
-    if (cardSets.length === 0) {
-        alert('No sets available to export');
+    for (let index = 0; index < lines.length; index += 1) {
+        const questionLine = lines[index];
+
+        if (!questionLine.startsWith("Q:")) {
+            continue;
+        }
+
+        const answerLine = lines[index + 1];
+
+        if (!answerLine || !answerLine.startsWith("A:")) {
+            continue;
+        }
+
+        const question = questionLine.slice(2).trim();
+        const answer = answerLine.slice(2).trim();
+
+        if (question && answer) {
+            cards.push(new Card(question, answer));
+        }
+
+        index += 1;
+    }
+
+    return cards;
+}
+
+function renderSetList() {
+    dom.setList.innerHTML = "";
+
+    if (state.cardSets.length === 0) {
+        dom.libraryEmptyState.hidden = false;
         return;
     }
 
-    // Create export data
-    const exportData = {
-        version: '1.0',
-        sets: cardSets,
-        exportDate: new Date().toISOString()
-    };
+    dom.libraryEmptyState.hidden = true;
 
-    // Convert to JSON and create blob
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { 
-        type: 'application/json' 
-    });
-    
-    // Create download link
+    state.cardSets
+        .map((set, index) => ({ set, index }))
+        .reverse()
+        .forEach(({ set, index }) => {
+            const card = document.createElement("article");
+            card.className = "set-item";
+
+            const info = document.createElement("div");
+            info.className = "set-info";
+
+            const title = document.createElement("h4");
+            title.textContent = set.title;
+
+            const subhead = document.createElement("p");
+            subhead.textContent = set.lastStudied
+                ? `Last studied ${formatDate(set.lastStudied)}`
+                : `Created ${formatDate(set.created)}`;
+
+            const meta = document.createElement("div");
+            meta.className = "set-meta";
+
+            const cardCount = document.createElement("span");
+            cardCount.className = "meta-pill";
+            cardCount.textContent = `${set.cards.length} card${set.cards.length === 1 ? "" : "s"}`;
+
+            const status = document.createElement("span");
+            status.className = "meta-pill";
+            status.textContent = set.lastStudied ? "Study ready" : "New set";
+
+            meta.append(cardCount, status);
+            info.append(title, subhead, meta);
+
+            const actions = document.createElement("div");
+            actions.className = "set-actions";
+
+            const studyButton = buildActionButton("Study Now", "primary-btn", "study", index);
+            const exportButton = buildActionButton("Export", "action-text-btn", "export", index);
+            const deleteButton = buildActionButton("Delete", "action-text-btn delete", "delete", index);
+
+            actions.append(studyButton, exportButton, deleteButton);
+            card.append(info, actions);
+            dom.setList.appendChild(card);
+        });
+}
+
+function buildActionButton(label, className, action, index) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = className;
+    button.textContent = label;
+    button.dataset.action = action;
+    button.dataset.index = String(index);
+    return button;
+}
+
+function updateDashboardStats() {
+    const totalCards = state.cardSets.reduce((sum, set) => sum + set.cards.length, 0);
+    dom.totalSetsStat.textContent = String(state.cardSets.length);
+    dom.totalCardsStat.textContent = String(totalCards);
+}
+
+function updateRecentActivity() {
+    const mostRecent = findMostRecentSet();
+
+    if (!mostRecent) {
+        dom.recentSetTitle.textContent = "Nothing studied yet";
+        dom.recentSetMeta.textContent = "Your latest session will show up here once you start studying.";
+        dom.resumeRecentBtn.disabled = true;
+        delete dom.resumeRecentBtn.dataset.index;
+        return;
+    }
+
+    dom.recentSetTitle.textContent = mostRecent.set.title;
+    dom.recentSetMeta.textContent = `Studied ${formatDate(mostRecent.set.lastStudied)} • ${mostRecent.set.cards.length} cards`;
+    dom.resumeRecentBtn.disabled = false;
+    dom.resumeRecentBtn.dataset.index = String(mostRecent.index);
+}
+
+function findMostRecentSet() {
+    return state.cardSets.reduce((latest, set, index) => {
+        if (!set.lastStudied) {
+            return latest;
+        }
+
+        if (!latest || set.lastStudied > latest.set.lastStudied) {
+            return { set, index };
+        }
+
+        return latest;
+    }, null);
+}
+
+function handleSetListClick(event) {
+    const button = event.target.closest("[data-action]");
+
+    if (!button) {
+        return;
+    }
+
+    const index = Number(button.dataset.index);
+    const action = button.dataset.action;
+
+    if (action === "study") {
+        startStudySet(index);
+    }
+
+    if (action === "export") {
+        exportSingleSet(index);
+    }
+
+    if (action === "delete") {
+        deleteSet(index);
+    }
+}
+
+function handleResumeRecent() {
+    const index = Number(dom.resumeRecentBtn.dataset.index);
+
+    if (!Number.isNaN(index)) {
+        startStudySet(index);
+    }
+}
+
+function exportAllSets() {
+    if (state.cardSets.length === 0) {
+        showToast("There are no sets to export yet.", "warning");
+        return;
+    }
+
+    downloadJson(
+        `flashcard-sets-${getDateStamp()}.json`,
+        {
+            version: "1.0",
+            sets: state.cardSets,
+            exportDate: new Date().toISOString()
+        }
+    );
+
+    showToast("Library export started.", "info");
+}
+
+function exportSingleSet(index) {
+    const set = state.cardSets[index];
+
+    if (!set) {
+        showToast("That set could not be found.", "error");
+        return;
+    }
+
+    downloadJson(
+        `flashcard-set-${sanitizeFilename(set.title)}-${getDateStamp()}.json`,
+        {
+            version: "1.0",
+            sets: [set],
+            exportDate: new Date().toISOString()
+        }
+    );
+
+    showToast(`Exported "${set.title}".`, "info");
+}
+
+function downloadJson(filename, payload) {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
+    const link = document.createElement("a");
     link.href = url;
-    link.download = `flashcard-sets-${new Date().toISOString().split('T')[0]}.json`;
-    
-    // Trigger download
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
-    
-    // Clean up
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 }
 
-function importSet() {
-    // Create and trigger file input
-    const fileInput = document.createElement('input');
-    fileInput.type = 'file';
-    fileInput.accept = '.json';
-    
-    fileInput.addEventListener('change', function(e) {
-        const file = e.target.files[0];
-        if (!file) return;
-        
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            try {
-                const importedData = JSON.parse(e.target.result);
-                
-                // Validate imported data
-                if (!validateImportedData(importedData)) {
-                    throw new Error('Invalid file format');
-                }
-                
-                // Handle the imported sets
-                handleImportedSets(importedData.sets);
-                
-                // Update UI and save
-                updateSetList();
-                saveSets();
-                alert('Sets imported successfully!');
-            } catch (error) {
-                alert('Error importing sets: ' + error.message);
+function handleImportChange(event) {
+    const file = event.target.files[0];
+
+    if (!file) {
+        return;
+    }
+
+    clearInlineMessage(dom.importMessage);
+
+    const reader = new FileReader();
+
+    reader.onload = (loadEvent) => {
+        try {
+            const importedData = JSON.parse(loadEvent.target.result);
+
+            if (!validateImportedData(importedData)) {
+                throw new Error("Please choose a Quizzy JSON export with valid sets.");
             }
-        };
-        
-        reader.readAsText(file);
-    });
-    
-    fileInput.click();
+
+            const importedCount = handleImportedSets(importedData.sets);
+            saveSets();
+            renderDashboard();
+            switchPanel("library-panel");
+            setInlineMessage(
+                dom.importMessage,
+                `Imported ${importedCount} set${importedCount === 1 ? "" : "s"} into your library.`,
+                "success"
+            );
+            showToast("Import complete.", "success");
+        } catch (error) {
+            console.error("Import failed.", error);
+            setInlineMessage(dom.importMessage, `Import failed: ${error.message}`, "error");
+        }
+    };
+
+    reader.onerror = () => {
+        setInlineMessage(dom.importMessage, "The selected file could not be read.", "error");
+    };
+
+    reader.readAsText(file);
+    event.target.value = "";
 }
 
 function validateImportedData(data) {
-    // Check basic structure
-    if (!data || !data.version || !data.sets || !Array.isArray(data.sets)) {
+    if (!data || data.version !== "1.0" || !Array.isArray(data.sets)) {
         return false;
     }
-    
-    // Validate each set
-    return data.sets.every(set => {
-        // Check basic set properties
-        if (!set || typeof set.title !== 'string' || !Array.isArray(set.cards)) {
+
+    return data.sets.every((set) => {
+        if (!set || typeof set.title !== "string" || !Array.isArray(set.cards)) {
             return false;
         }
-        
-        // Validate each card in the set
-        return set.cards.every(card => {
-            return card 
-                && typeof card.question === 'string' 
-                && typeof card.answer === 'string'
-                && card.question.trim() !== '' 
-                && card.answer.trim() !== '';
-        });
-    });
-}
 
-function importSet() {
-    const fileInput = document.createElement('input');
-    fileInput.type = 'file';
-    fileInput.accept = '.json';
-    
-    fileInput.addEventListener('change', function(e) {
-        const file = e.target.files[0];
-        if (!file) return;
-        
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            try {
-                const importedData = JSON.parse(e.target.result);
-                
-                // Validate imported data
-                if (!validateImportedData(importedData)) {
-                    throw new Error('Invalid file format. Please ensure your JSON file contains valid flashcard sets.');
-                }
-                
-                // Handle the imported sets
-                handleImportedSets(importedData.sets);
-                
-                // Update UI and save
-                updateSetList();
-                saveSets();
-                alert('Sets imported successfully!');
-            } catch (error) {
-                console.error('Import error:', error);
-                alert('Error importing sets: ' + error.message);
-            }
-        };
-        
-        reader.onerror = function() {
-            alert('Error reading file');
-        };
-        
-        reader.readAsText(file);
+        return set.cards.every((card) => (
+            card
+            && typeof card.question === "string"
+            && typeof card.answer === "string"
+            && card.question.trim() !== ""
+            && card.answer.trim() !== ""
+        ));
     });
-    
-    fileInput.click();
 }
 
 function handleImportedSets(importedSets) {
-    // Process each imported set
-    importedSets.forEach(importedSet => {
-        // Check for duplicate titles
+    importedSets.forEach((importedSet) => {
         let title = importedSet.title;
-        let counter = 1;
-        while (cardSets.some(set => set.title === title)) {
-            title = `${importedSet.title} (${counter})`;
-            counter++;
+        let duplicateCount = 1;
+
+        while (state.cardSets.some((set) => set.title === title)) {
+            title = `${importedSet.title} (${duplicateCount})`;
+            duplicateCount += 1;
         }
-        
-        // Create new set with proper class structure
-        const cards = importedSet.cards.map(card => {
-            const newCard = new Card(card.question, card.answer);
-            newCard.level = card.level || 0;
-            newCard.attempts = card.attempts || 0;
-            newCard.mastered = card.mastered || false;
-            newCard.nextReview = new Date(card.nextReview || new Date());
-            return newCard;
+
+        const cards = importedSet.cards.map((card) => {
+            const hydrated = new Card(card.question, card.answer);
+            hydrated.level = Number(card.level) || 0;
+            hydrated.attempts = Number(card.attempts) || 0;
+            hydrated.mastered = Boolean(card.mastered);
+            hydrated.nextReview = card.nextReview ? new Date(card.nextReview) : new Date();
+            return hydrated;
         });
-        
+
         const newSet = new CardSet(title, cards);
-        newSet.created = new Date(importedSet.created || new Date());
+        newSet.created = importedSet.created ? new Date(importedSet.created) : new Date();
         newSet.lastStudied = importedSet.lastStudied ? new Date(importedSet.lastStudied) : null;
-        
-        cardSets.push(newSet);
+
+        state.cardSets.push(newSet);
     });
+
+    return importedSets.length;
 }
 
-function updateSetList() {
-        const setList = document.getElementById('setList');
-        setList.innerHTML = '';
+function deleteSet(index) {
+    const set = state.cardSets[index];
 
-        cardSets.forEach((set, index) => {
-            const setElement = document.createElement('div');
-            setElement.className = 'set-item';
-            setElement.innerHTML = `
-                <div class="set-info">
-                    <h3>${set.title}</h3>
-                    <p>${set.cards.length} cards</p>
-                </div>
-                <div class="set-actions">
-                    <button class="action-btn" onclick="startStudySet(${index})">Study</button>
-                    <div class="button-stack">
-                        <button class="delete-btn" onclick="deleteSet(${index})">
-                            <i class="fa-solid fa-trash"></i>
-                        </button>
-                        <button class="download-btn" onclick="exportSingleSet(${index})">
-                            <i class="fa-solid fa-download"></i>
-                        </button>
-                    </div>
-                </div>
-            `;
-            setList.appendChild(setElement);
-        });
-    }
-
-// Add new exportSingleSet function
-function exportSingleSet(index) {
-    const set = cardSets[index];
     if (!set) {
-        alert('Set not found');
         return;
     }
 
-    // Create export data for single set
-    const exportData = {
-        version: '1.0',
-        sets: [set], // Wrap in array to maintain format compatibility
-        exportDate: new Date().toISOString()
-    };
-
-    // Convert to JSON and create blob
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { 
-        type: 'application/json' 
+    showConfirmDialog({
+        title: `Delete "${set.title}"?`,
+        message: "This removes the set from this browser and cannot be undone.",
+        confirmText: "Delete Set",
+        onConfirm: () => {
+            state.cardSets.splice(index, 1);
+            saveSets();
+            renderDashboard();
+            showToast("Set deleted.", "info");
+        }
     });
-    
-    // Create download link with set title in filename
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    
-    // Create filename using set title (sanitized) and date
-    const sanitizedTitle = set.title.replace(/[^a-z0-9]/gi, '-').toLowerCase();
-    link.download = `flashcard-set-${sanitizedTitle}-${new Date().toISOString().split('T')[0]}.json`;
-    
-    // Trigger download
-    document.body.appendChild(link);
-    link.click();
-    
-    // Clean up
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
 }
 
-// Modify your import-export-controls div in HTML to only show import
-document.querySelector('.import-export-controls').innerHTML = `
-    <button id="importSet">Load Set</button>
-`;
+function showConfirmDialog({ title, message, confirmText, onConfirm }) {
+    state.confirmAction = onConfirm;
+    dom.confirmTitle.textContent = title;
+    dom.confirmMessage.textContent = message;
+    dom.confirmApproveBtn.textContent = confirmText || "Confirm";
+    dom.confirmDialog.hidden = false;
+}
 
-        function deleteSet(index) {
-            if (confirm('Are you sure you want to delete this set?')) {
-                cardSets.splice(index, 1);
-                saveSets();
-                updateSetList();
-            }
-        }
+function closeConfirmDialog() {
+    dom.confirmDialog.hidden = true;
+    state.confirmAction = null;
+}
 
-        function startStudySet(index) {
-            currentSet = cardSets[index];
-            currentSet.lastStudied = new Date();
-            currentCardIndex = 0;
-            masteredCards = 0;
-            
-            currentSet.cards.forEach(card => {
-                card.level = 0;
-                card.attempts = 0;
-                card.mastered = false;
-                card.nextReview = new Date();
-            });
+function approveConfirmDialog() {
+    const action = state.confirmAction;
+    closeConfirmDialog();
 
-            shuffleCards();
-            toggleMode();
-            showCard();
-            saveSets();
-        }
+    if (typeof action === "function") {
+        action();
+    }
+}
 
-        function toggleMode() {
-            isStudyMode = !isStudyMode;
-            document.body.classList.toggle('study-mode', isStudyMode);
-            
-            const modeToggle = document.getElementById('modeToggle');
-            modeToggle.textContent = isStudyMode ? 'Manage Sets' : 'Study Mode';
-            
-            if (!isStudyMode) {
-                updateSetList();
-            }
-        }
+function startStudySet(index) {
+    const set = state.cardSets[index];
 
-        function shuffleCards() {
-            if (!currentSet) return;
-            
-            for (let i = currentSet.cards.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [currentSet.cards[i], currentSet.cards[j]] = [currentSet.cards[j], currentSet.cards[i]];
-            }
-        }
-
-        function showCard() {
-            if (!currentSet || !currentSet.cards.length) return;
-
-            if (currentCardIndex >= currentSet.cards.length) {
-                currentCardIndex = 0;
-                shuffleCards();
-            }
-
-            const card = currentSet.cards[currentCardIndex];
-            const front = document.querySelector('.flashcard-front');
-            const back = document.querySelector('.flashcard-back');
-            
-            front.textContent = card.question;
-            back.textContent = card.answer;
-
-            document.querySelector('.flashcard').classList.remove('flipped');
-            updateStats();
-        }
-
-        function rateCard(difficulty) {
-            if (!currentSet) return;
-            
-            const card = currentSet.cards[currentCardIndex];
-            card.attempts++;
-
-            if (difficulty === 3) {
-                card.level++;
-            } else if (difficulty === 1) {
-                card.level = Math.max(0, card.level - 1);
-            }
-
-            if (card.level >= 3 && !card.mastered) {
-                card.mastered = true;
-                masteredCards++;
-            }
-
-            const now = new Date();
-            const hours = Math.pow(2, card.level);
-            card.nextReview = new Date(now.getTime() + hours * 60 * 60 * 1000);
-
-            currentCardIndex++;
-            showCard();
-            saveSets();
-        }
-
-        
-
-function initialize() {
-    loadSavedSets();
-    document.body.classList.toggle('study-mode', isStudyMode);
-    
-    // Set up import button event listener
-    const importButton = document.getElementById('importSet');
-    if (importButton) {
-        importButton.addEventListener('click', importSet);
+    if (!set) {
+        showToast("That set could not be found.", "error");
+        return;
     }
 
-    
+    state.currentSetIndex = index;
+    state.masteredCards = 0;
+    state.studyComplete = false;
+    set.lastStudied = new Date();
+    resetStudyProgress(set.cards);
+    shuffleCards(set.cards);
+    state.currentCardIndex = findNextStudyCardIndex(0);
+    saveSets();
+    renderDashboard();
+    enterStudyMode();
+    renderStudyState();
+    dom.flashcard.focus();
 }
 
-// Update startStudySet to use the study-specific tooltips
-function startStudySet(index) {
-    currentSet = cardSets[index];
-    currentSet.lastStudied = new Date();
-    currentCardIndex = 0;
-    masteredCards = 0;
-    
-    currentSet.cards.forEach(card => {
+function enterStudyMode() {
+    dom.appShell.hidden = true;
+    dom.studyView.hidden = false;
+}
+
+function exitStudyMode(returnPanel = "library-panel") {
+    dom.studyView.hidden = true;
+    dom.appShell.hidden = false;
+    state.currentSetIndex = -1;
+    state.currentCardIndex = -1;
+    state.masteredCards = 0;
+    state.studyComplete = false;
+    switchPanel(returnPanel);
+    renderStudyState();
+}
+
+function restartSession() {
+    const set = getCurrentSet();
+
+    if (!set) {
+        return;
+    }
+
+    state.masteredCards = 0;
+    state.studyComplete = false;
+    resetStudyProgress(set.cards);
+    shuffleCards(set.cards);
+    state.currentCardIndex = findNextStudyCardIndex(0);
+    saveSets();
+    renderStudyState();
+}
+
+function resetStudyProgress(cards) {
+    cards.forEach((card) => {
         card.level = 0;
         card.attempts = 0;
         card.mastered = false;
         card.nextReview = new Date();
     });
-
-    shuffleCards();
-    toggleMode();
-    showCard();
-    saveSets();
-
-    // Show study mode tooltips
-    const tooltipSystem = new TooltipSystem();
-    tooltipSystem.tooltips = window.studyModeTooltips;
-    tooltipSystem.showSequentially();
 }
 
-// Call initialize when the DOM is fully loaded
-document.addEventListener('DOMContentLoaded', initialize);
+function shuffleCards(cards) {
+    for (let index = cards.length - 1; index > 0; index -= 1) {
+        const randomIndex = Math.floor(Math.random() * (index + 1));
+        [cards[index], cards[randomIndex]] = [cards[randomIndex], cards[index]];
+    }
+}
 
-        function restartSession() {
-            if (!currentSet) return;
-            
-            currentCardIndex = 0;
-            masteredCards = 0;
-            currentSet.cards.forEach(card => {
-                card.level = 0;
-                card.attempts = 0;
-                card.mastered = false;
-                card.nextReview = new Date();
-            });
-            shuffleCards();
-            showCard();
-            saveSets();
+function getCurrentSet() {
+    return state.cardSets[state.currentSetIndex] || null;
+}
+
+function findNextStudyCardIndex(startIndex) {
+    const set = getCurrentSet();
+
+    if (!set || set.cards.length === 0) {
+        return -1;
+    }
+
+    const total = set.cards.length;
+    const normalizedStart = ((startIndex % total) + total) % total;
+
+    for (let offset = 0; offset < total; offset += 1) {
+        const currentIndex = (normalizedStart + offset) % total;
+
+        if (!set.cards[currentIndex].mastered) {
+            return currentIndex;
         }
+    }
 
-        function updateStats() {
-            if (!currentSet) return;
-            
-            document.getElementById('remaining-count').textContent = 
-                currentSet.cards.length - masteredCards;
-            document.getElementById('mastered-count').textContent = masteredCards;
-        }
+    return -1;
+}
 
-        document.querySelector('.flashcard').addEventListener('click', function() {
-            this.classList.toggle('flipped');
-        });
+function flipFlashcard() {
+    if (!getCurrentSet() || state.studyComplete) {
+        return;
+    }
 
-        // Initialize
-        loadSavedSets();
-        document.body.classList.toggle('study-mode', isStudyMode);
+    dom.flashcard.classList.toggle("flipped");
+}
+
+function rateCard(difficulty) {
+    const set = getCurrentSet();
+
+    if (!set || state.studyComplete) {
+        return;
+    }
+
+    const currentCard = set.cards[state.currentCardIndex];
+
+    if (!currentCard) {
+        return;
+    }
+
+    currentCard.attempts += 1;
+
+    if (difficulty === 3) {
+        currentCard.level += 1;
+    } else if (difficulty === 1) {
+        currentCard.level = Math.max(0, currentCard.level - 1);
+    }
+
+    const hoursUntilNextReview = Math.pow(2, Math.max(currentCard.level, 0));
+    currentCard.nextReview = new Date(Date.now() + hoursUntilNextReview * 60 * 60 * 1000);
+
+    if (currentCard.level >= 3 && !currentCard.mastered) {
+        currentCard.mastered = true;
+        state.masteredCards += 1;
+    }
+
+    if (state.masteredCards >= set.cards.length) {
+        state.studyComplete = true;
+        saveSets();
+        renderStudyState();
+        return;
+    }
+
+    state.currentCardIndex = findNextStudyCardIndex(state.currentCardIndex + 1);
+
+    if (state.currentCardIndex === -1) {
+        state.studyComplete = true;
+    }
+
+    saveSets();
+    renderStudyState();
+}
+
+function renderStudyState() {
+    const set = getCurrentSet();
+
+    if (!set) {
+        dom.studySetTitle.textContent = "Study session";
+        dom.cardQuestion.textContent = "";
+        dom.cardAnswer.textContent = "";
+        dom.remainingCount.textContent = "0";
+        dom.masteredCount.textContent = "0";
+        dom.studyProgressLabel.textContent = "Ready to begin";
+        dom.studyProgressFill.style.width = "0%";
+        dom.studySummary.hidden = true;
+        dom.studyActions.hidden = false;
+        dom.studyHint.hidden = false;
+        dom.flashcard.classList.remove("flipped");
+        return;
+    }
+
+    const totalCards = set.cards.length;
+    const remainingCards = Math.max(totalCards - state.masteredCards, 0);
+    const progressRatio = totalCards === 0 ? 0 : state.masteredCards / totalCards;
+
+    dom.studySetTitle.textContent = set.title;
+    dom.remainingCount.textContent = String(remainingCards);
+    dom.masteredCount.textContent = String(state.masteredCards);
+    dom.studyProgressFill.style.width = `${progressRatio * 100}%`;
+
+    if (state.studyComplete) {
+        dom.studyProgressLabel.textContent = "Session complete";
+        dom.cardQuestion.textContent = "Nice work.";
+        dom.cardAnswer.textContent = "Take another pass or head back to your library.";
+        dom.flashcard.classList.remove("flipped");
+        dom.studyHint.hidden = true;
+        dom.studyActions.hidden = true;
+        dom.studySummary.hidden = false;
+        dom.studySummaryText.textContent = `You mastered ${totalCards} card${totalCards === 1 ? "" : "s"} in this round.`;
+        return;
+    }
+
+    const card = set.cards[state.currentCardIndex];
+
+    if (!card) {
+        state.studyComplete = true;
+        renderStudyState();
+        return;
+    }
+
+    dom.cardQuestion.textContent = card.question;
+    dom.cardAnswer.textContent = card.answer;
+    dom.studyProgressLabel.textContent = `${state.masteredCards} of ${totalCards} mastered`;
+    dom.flashcard.classList.remove("flipped");
+    dom.studyHint.hidden = false;
+    dom.studyActions.hidden = false;
+    dom.studySummary.hidden = true;
+}
+
+function handleComposerFocus() {
+    if (dom.cardsList.value.trim() === "") {
+        dom.cardsList.value = "Q: ";
+        dom.cardsList.setSelectionRange(3, 3);
+    }
+}
+
+function handleComposerKeydown(event) {
+    if (event.key !== "Enter" || event.shiftKey) {
+        return;
+    }
+
+    event.preventDefault();
+
+    const cursorPosition = dom.cardsList.selectionStart;
+    const content = dom.cardsList.value;
+    const textBeforeCursor = content.slice(0, cursorPosition);
+    const textAfterCursor = content.slice(cursorPosition);
+    const prefix = getNextComposerPrefix(textBeforeCursor);
+    const insertedText = `\n${prefix}`;
+
+    dom.cardsList.value = `${textBeforeCursor}${insertedText}${textAfterCursor}`;
+
+    const nextPosition = cursorPosition + insertedText.length;
+    dom.cardsList.setSelectionRange(nextPosition, nextPosition);
+}
+
+function getNextComposerPrefix(textBeforeCursor) {
+    const meaningfulLines = textBeforeCursor
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+    const lastLine = meaningfulLines[meaningfulLines.length - 1] || "";
+
+    if (lastLine.startsWith("Q:")) {
+        return "A: ";
+    }
+
+    return "Q: ";
+}
+
+function populateGeneratedDraft(title, cards) {
+    const composerText = cards
+        .map((card) => `Q: ${card.question}\nA: ${card.answer}`)
+        .join("\n");
+
+    if (title) {
+        dom.setTitle.value = title;
+    }
+
+    dom.cardsList.value = composerText;
+    switchPanel("create-panel");
+    switchCreateTab("manual");
+    setInlineMessage(dom.manualFormMessage, "AI draft added to the composer. Review it, tweak it, then save.", "success");
+    dom.cardsList.focus();
+    dom.cardsList.setSelectionRange(dom.cardsList.value.length, dom.cardsList.value.length);
+}
+
+function setInlineMessage(element, message, tone = "info") {
+    element.hidden = false;
+    element.dataset.tone = tone;
+    element.textContent = message;
+}
+
+function clearInlineMessage(element) {
+    element.hidden = true;
+    element.textContent = "";
+    delete element.dataset.tone;
+}
+
+function showToast(message, tone = "info") {
+    const toast = document.createElement("div");
+    toast.className = `toast ${tone}`;
+    toast.textContent = message;
+    dom.toastStack.appendChild(toast);
+
+    window.setTimeout(() => {
+        toast.remove();
+    }, 3400);
+}
+
+function formatDate(dateValue) {
+    const date = new Date(dateValue);
+
+    if (Number.isNaN(date.getTime())) {
+        return "unknown date";
+    }
+
+    return new Intl.DateTimeFormat("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric"
+    }).format(date);
+}
+
+function sanitizeFilename(value) {
+    return value
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "") || "flashcards";
+}
+
+function getDateStamp() {
+    return new Date().toISOString().split("T")[0];
+}

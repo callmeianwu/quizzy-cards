@@ -3,123 +3,296 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles/main.css">
-    <title>Custom Flashcard Sets</title>
+    <title>Quizzy Cards</title>
 </head>
 <body>
-     <div class="logo-container">
-        <div class="logo">Quizzy Cards</div>
-    </div>
-    <div class="container">
-        <div class="tooltip-container"></div>
-        <h1>Custom Flashcard Sets</h1>
-        
-        <!-- Study Mode Elements -->
-        <div class="flashcard">
-            <div class="flashcard-inner">
-                <div class="flashcard-front"></div>
-                <div class="flashcard-back"></div>
+    <div class="app-shell" id="appShell">
+        <aside class="sidebar">
+            <div class="brand-block">
+                <div class="brand-mark" aria-hidden="true">Q</div>
+                <div class="brand-copy">
+                    <p class="eyebrow">Study playground</p>
+                    <h1>Quizzy Cards</h1>
+                    <p>Build flashcard sets, keep them local, and jump into a focused study session when you are ready.</p>
+                </div>
             </div>
-        </div>
 
-        <div class="controls study-mode">
-            <button class="difficulty-btn easy" onclick="rateCard(3)">Easy</button>
-            <button class="difficulty-btn medium" onclick="rateCard(2)">Medium</button>
-            <button class="difficulty-btn hard" onclick="rateCard(1)">Hard</button>
-            <button class="reset" onclick="restartSession()">Restart</button>
-        </div>
+            <nav class="sidebar-nav" aria-label="Primary navigation">
+                <button class="nav-pill active" type="button" data-panel-target="create-panel">Create</button>
+                <button class="nav-pill" type="button" data-panel-target="library-panel">Library</button>
+            </nav>
 
-        <div class="stats study-mode">
-            <p>Cards remaining: <span id="remaining-count">0</span></p>
-            <p>Mastered: <span id="mastered-count">0</span></p>
-        </div>
+            <section class="sidebar-card">
+                <p class="section-kicker">Snapshot</p>
+                <div class="metric-grid">
+                    <div class="metric-card">
+                        <strong id="totalSetsStat">0</strong>
+                        <span>Sets saved</span>
+                    </div>
+                    <div class="metric-card">
+                        <strong id="totalCardsStat">0</strong>
+                        <span>Total cards</span>
+                    </div>
+                </div>
+            </section>
 
-        <!-- Set Management Elements -->
-        <div class="set-management">
-            <h2 class="section-title">Create New Set</h2>
-            <div class="create-set-form">
-                <input type="text" id="setTitle" placeholder="Enter set title">
-                <textarea id="cardsList" rows="6" placeholder="Enter cards in format:
-Q: What is the capital of France?
+            <section class="sidebar-card">
+                <p class="section-kicker">Focus tip</p>
+                <h2>Small set, fast momentum.</h2>
+                <p>Draft a short set, run a focused study round, then refine anything that still feels shaky.</p>
+            </section>
+        </aside>
+
+        <main class="dashboard">
+            <header class="dashboard-hero">
+                <div class="hero-copy">
+                    <p class="eyebrow">Create first, then study</p>
+                    <h2>Build your next quiz session in one playful workspace.</h2>
+                    <p>Manual drafting, AI help, imports, and saved sets now live together so the path into study mode feels clear.</p>
+                </div>
+                <div class="hero-chips" aria-label="Highlights">
+                    <span>Local-first</span>
+                    <span>Import friendly</span>
+                    <span>AI assisted</span>
+                </div>
+            </header>
+
+            <div class="dashboard-grid">
+                <section class="workspace-column">
+                    <section class="workspace-panel active" id="create-panel" data-panel>
+                        <div class="panel-heading">
+                            <div>
+                                <p class="section-kicker">Create workspace</p>
+                                <h3>Start a fresh set</h3>
+                                <p>Choose a creation mode, keep one shared title, and save once the draft feels right.</p>
+                            </div>
+                        </div>
+
+                        <div class="shared-title-field">
+                            <label for="setTitle">Set title</label>
+                            <input type="text" id="setTitle" placeholder="Biology unit review, French verbs, world capitals...">
+                        </div>
+
+                        <div class="tab-bar" role="tablist" aria-label="Create methods">
+                            <button class="tab-btn active" type="button" role="tab" aria-selected="true" data-create-tab="manual">Manual</button>
+                            <button class="tab-btn" type="button" role="tab" aria-selected="false" data-create-tab="ai">AI Generate</button>
+                            <button class="tab-btn" type="button" role="tab" aria-selected="false" data-create-tab="import">Import</button>
+                        </div>
+
+                        <section class="create-pane active" id="manual-pane" data-create-pane="manual">
+                            <div class="form-card">
+                                <div class="form-card-header">
+                                    <div>
+                                        <h4>Manual composer</h4>
+                                        <p>Write cards as question and answer pairs. Press Enter to keep the `Q:` / `A:` rhythm moving.</p>
+                                    </div>
+                                </div>
+
+                                <label class="field-label" for="cardsList">Cards</label>
+                                <textarea id="cardsList" rows="12" placeholder="Q: What is the capital of France?
 A: Paris
 Q: What is 2 + 2?
 A: 4"></textarea>
-                <button class="action-btn" onclick="createSet()">Create Set</button>
-            </div>
 
-            <h2 id="your-sets" class="section-title">Your Sets</h2>
-            <div id="setList" class="set-list">
-                <!-- Sets will be listed here -->
-            </div>
+                                <div class="composer-footer">
+                                    <p class="helper-text">One question line followed by one answer line creates each card.</p>
+                                    <button class="primary-btn" type="button" id="saveSetBtn">Save Set</button>
+                                </div>
 
-            <div class="import-export-controls">
-                <button id="importSet">Import Set</button>
-                <button id="exportSet">Export Set</button>
-            </div>
-        </div>
+                                <p class="inline-message" id="manualFormMessage" hidden></p>
+                            </div>
+                        </section>
 
-        <button class="mode-toggle" onclick="toggleMode()" id="modeToggle">Study Mode</button>
+                        <section class="create-pane" id="ai-pane" data-create-pane="ai" hidden>
+                            <div class="form-card">
+                                <div class="form-card-header">
+                                    <div>
+                                        <h4>AI draft generator</h4>
+                                        <p>Generate a starter draft, then we will drop it into the composer so you can review and save it.</p>
+                                    </div>
+                                </div>
+
+                                <div class="field-grid">
+                                    <div>
+                                        <label class="field-label" for="aiApiKey">OpenAI API key</label>
+                                        <input type="password" id="aiApiKey" class="ai-input" placeholder="Paste your API key">
+                                        <p class="field-status" id="aiKeyStatus">No API key saved in this browser yet.</p>
+                                    </div>
+                                    <div class="field-actions">
+                                        <button class="secondary-btn" type="button" id="saveApiKeyBtn">Save Key</button>
+                                    </div>
+                                </div>
+
+                                <label class="field-label" for="aiPrompt">Study topic</label>
+                                <textarea id="aiPrompt" class="ai-input" rows="7" placeholder="Create flashcards about cellular respiration basics for a high school biology class."></textarea>
+
+                                <div class="count-block">
+                                    <span class="field-label">Draft size</span>
+                                    <div class="ai-count-selector" aria-label="Number of AI cards">
+                                        <button class="ai-count-btn" type="button" data-count="5">5</button>
+                                        <button class="ai-count-btn active" type="button" data-count="10">10</button>
+                                        <button class="ai-count-btn" type="button" data-count="15">15</button>
+                                        <button class="ai-count-btn" type="button" data-count="20">20</button>
+                                        <button class="ai-count-btn" type="button" data-count="auto">Auto</button>
+                                    </div>
+                                </div>
+
+                                <div class="ai-feedback">
+                                    <div class="ai-progress" id="aiProgress" hidden>
+                                        <div class="ai-loading-animation" aria-hidden="true"></div>
+                                        <p>Generating a study draft for you...</p>
+                                    </div>
+                                    <div class="ai-success" id="aiSuccess" hidden>
+                                        <strong>Draft ready.</strong>
+                                        <span>Your cards are in the composer. Review them and save when you are ready.</span>
+                                    </div>
+                                </div>
+
+                                <div class="composer-footer">
+                                    <p class="helper-text">Your set title above is shared with the manual composer.</p>
+                                    <button class="primary-btn accent-btn" type="button" id="generateAiBtn">Generate Draft</button>
+                                </div>
+
+                                <p class="inline-message" id="aiFormMessage" hidden></p>
+                            </div>
+                        </section>
+
+                        <section class="create-pane" id="import-pane" data-create-pane="import" hidden>
+                            <div class="form-card import-card">
+                                <div class="form-card-header">
+                                    <div>
+                                        <h4>Bring in an existing set</h4>
+                                        <p>Import a Quizzy JSON file and we will merge it into your local library while keeping duplicate titles readable.</p>
+                                    </div>
+                                </div>
+
+                                <div class="import-dropzone">
+                                    <p>Import uses the existing Quizzy `version: "1.0"` JSON format.</p>
+                                    <button class="secondary-btn" type="button" id="importTriggerBtn">Choose JSON File</button>
+                                    <input type="file" id="importFileInput" accept=".json" hidden>
+                                </div>
+
+                                <p class="inline-message" id="importMessage" hidden></p>
+                            </div>
+                        </section>
+                    </section>
+
+                    <section class="workspace-panel" id="library-panel" data-panel hidden>
+                        <div class="panel-heading library-heading">
+                            <div>
+                                <p class="section-kicker">Library</p>
+                                <h3>Your saved sets</h3>
+                                <p>Pick a set and jump into focus mode, or export your whole collection.</p>
+                            </div>
+                            <button class="secondary-btn" type="button" id="exportAllSetsBtn">Export All</button>
+                        </div>
+
+                        <div class="library-empty" id="libraryEmptyState" hidden>
+                            <h4>No sets yet.</h4>
+                            <p>Create your first set or import one to start building your study library.</p>
+                            <button class="primary-btn" type="button" data-panel-target="create-panel">Go to Create</button>
+                        </div>
+
+                        <div class="set-list" id="setList"></div>
+                    </section>
+                </section>
+
+                <aside class="context-column">
+                    <section class="workspace-panel context-panel">
+                        <p class="section-kicker">Flow</p>
+                        <h3>How the rhythm works now</h3>
+                        <ol class="flow-list">
+                            <li>Name a set and build it manually, with AI, or from import.</li>
+                            <li>Save the set into your library.</li>
+                            <li>Enter focus mode and let study take over the screen.</li>
+                        </ol>
+                    </section>
+
+                    <section class="workspace-panel context-panel">
+                        <p class="section-kicker">Recent activity</p>
+                        <h3 id="recentSetTitle">Nothing studied yet</h3>
+                        <p id="recentSetMeta">Your latest session will show up here once you start studying.</p>
+                        <button class="secondary-btn" type="button" id="resumeRecentBtn" disabled>Study Latest Set</button>
+                    </section>
+                </aside>
+            </div>
+        </main>
     </div>
-    
-    <!-- Floating AI button -->
-    <div class="ai-fab" onclick="toggleAiSection()">
-        <i class="fas fa-robot"></i>
-        <div class="ai-fab-tooltip">Try AI flashcards!</div>
-    </div>
-    
-    <!-- Modern AI Section -->
-    <div id="aiSection" class="ai-section">
-        <div class="ai-container">
-            <button class="ai-close" onclick="toggleAiSection()">
-                <i class="fas fa-times"></i>
-            </button>
-            
-            <div class="ai-header">
-                <h2>AI Study Set Generator</h2>
-                <p>Create perfect flashcards in seconds with artificial intelligence</p>
-            </div>
-            
-            <div class="ai-form">
-                <div class="ai-input-group">
-                    <span class="ai-label">API Key</span>
-                    <input type="password" id="aiApiKey" class="ai-input" placeholder="Enter your OpenAI API key">
-                    <button class="ai-btn" style="margin-top:10px" onclick="saveApiKey()">Save Key</button>
-                </div>
-                
-                <div class="ai-input-group">
-                    <span class="ai-label">Set Title</span>
-                    <input type="text" id="aiSetTitle" class="ai-input" placeholder="Enter a title for your flashcard set">
-                </div>
-                
-                <div class="ai-input-group">
-                    <span class="ai-label">Study Topic</span>
-                    <textarea id="aiPrompt" class="ai-textarea" 
-                        placeholder="Describe what you want to study. For example: 'Create flashcards about basic quantum physics concepts' or 'Generate questions about modern world history'"></textarea>
-                </div>
-                
-                <div class="ai-input-group">
-                    <span class="ai-label">Number of Cards</span>
-                    <div class="ai-count-selector">
-                        <button class="ai-count-btn" data-count="5">5</button>
-                        <button class="ai-count-btn active" data-count="10">10</button>
-                        <button class="ai-count-btn" data-count="15">15</button>
-                        <button class="ai-count-btn" data-count="20">20</button>
-                        <button class="ai-count-btn" data-count="auto">Auto</button>
+
+    <section class="study-view" id="studyView" hidden aria-labelledby="studySetTitle">
+        <div class="study-shell">
+            <header class="study-header">
+                <button class="ghost-btn" type="button" id="exitStudyBtn">Back to Dashboard</button>
+
+                <div class="study-header-copy">
+                    <p class="eyebrow">Focus mode</p>
+                    <h2 id="studySetTitle">Study session</h2>
+
+                    <div class="study-progress-row">
+                        <span class="study-chip"><strong id="remainingCount">0</strong> remaining</span>
+                        <span class="study-chip"><strong id="masteredCount">0</strong> mastered</span>
+                        <span class="study-chip" id="studyProgressLabel">Ready to begin</span>
+                    </div>
+
+                    <div class="study-progress-bar" aria-hidden="true">
+                        <span id="studyProgressFill"></span>
                     </div>
                 </div>
-                
-                <button class="ai-btn" onclick="generateCardsWithAI()">Generate My Flashcards</button>
-            </div>
-            
-            <div class="ai-progress" id="aiProgress">
-                <div class="ai-loading-animation"></div>
-                <p>Creating your perfect study cards...</p>
-            </div>
-            
-            <div class="ai-success" id="aiSuccess">
-                <i class="fas fa-check-circle"></i>
-                <p>Your flashcards are ready!</p>
+
+                <button class="secondary-btn compact-btn" type="button" id="restartStudyBtn">Restart</button>
+            </header>
+
+            <main class="study-main">
+                <div class="study-stage">
+                    <button class="flashcard" id="flashcard" type="button" aria-live="polite">
+                        <div class="flashcard-inner">
+                            <div class="flashcard-face flashcard-front">
+                                <span class="face-label">Question</span>
+                                <div class="flashcard-copy" id="cardQuestion"></div>
+                            </div>
+                            <div class="flashcard-face flashcard-back">
+                                <span class="face-label">Answer</span>
+                                <div class="flashcard-copy" id="cardAnswer"></div>
+                            </div>
+                        </div>
+                    </button>
+
+                    <p class="study-hint" id="studyHint">Flip the card, answer it in your head, then rate how it felt.</p>
+
+                    <div class="study-actions" id="studyActions">
+                        <button class="rating-btn hard" type="button" data-rating="1">Hard</button>
+                        <button class="rating-btn medium" type="button" data-rating="2">Medium</button>
+                        <button class="rating-btn easy" type="button" data-rating="3">Easy</button>
+                    </div>
+
+                    <section class="study-summary" id="studySummary" hidden>
+                        <p class="section-kicker">Session complete</p>
+                        <h3>You cleared this set.</h3>
+                        <p id="studySummaryText">Run it again for another pass, or head back to your library for a different set.</p>
+                        <div class="summary-actions">
+                            <button class="primary-btn" type="button" id="studyAgainBtn">Study Again</button>
+                            <button class="secondary-btn" type="button" id="returnToLibraryBtn">Back to Library</button>
+                        </div>
+                    </section>
+                </div>
+            </main>
+        </div>
+    </section>
+
+    <div class="toast-stack" id="toastStack" aria-live="polite" aria-atomic="true"></div>
+
+    <div class="dialog-backdrop" id="confirmDialog" hidden>
+        <div class="dialog-card" role="dialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmMessage">
+            <p class="section-kicker">Please confirm</p>
+            <h2 id="confirmTitle">Confirm action</h2>
+            <p id="confirmMessage">This cannot be undone.</p>
+            <div class="dialog-actions">
+                <button class="ghost-btn" type="button" id="confirmCancelBtn">Cancel</button>
+                <button class="danger-btn" type="button" id="confirmApproveBtn">Delete</button>
             </div>
         </div>
     </div>
@@ -127,70 +300,5 @@ A: 4"></textarea>
     <script src="scripts/card.js"></script>
     <script src="scripts/card-set.js"></script>
     <script src="scripts/ai-generator.js"></script>
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const textarea = document.getElementById('cardsList');
-            let lastLineStarted = 'Q'; 
-        
-            textarea.addEventListener('keydown', function(e) {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault(); 
-                    
-                    const cursorPosition = this.selectionStart;
-                    const content = this.value;
-                    
-                    const textBeforeCursor = content.substring(0, cursorPosition);
-                    const textAfterCursor = content.substring(cursorPosition);
-                    
-                    // Determine whether to add Q: or A:
-                    const prefix = lastLineStarted === 'Q' ? 'A: ' : 'Q: ';
-                    lastLineStarted = lastLineStarted === 'Q' ? 'A' : 'Q';
-                    
-                    this.value = textBeforeCursor + '\n' + prefix + textAfterCursor;
-                    
-                    // Move cursor after the prefix
-                    const newPosition = cursorPosition + prefix.length + 1;
-                    this.setSelectionRange(newPosition, newPosition);
-                }
-            });
-        
-            textarea.addEventListener('focus', function() {
-                if (this.value.trim() === '') {
-                    this.value = 'Q: ';
-                    this.setSelectionRange(3, 3);
-                }
-            });
-        });
-    </script>
-    <script>
-        // AI section toggle functionality
-        function toggleAiSection() {
-            const aiSection = document.getElementById('aiSection');
-            aiSection.classList.toggle('active');
-        }
-        
-        // Set up card count selector
-        document.querySelectorAll('.ai-count-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                document.querySelectorAll('.ai-count-btn').forEach(b => b.classList.remove('active'));
-                this.classList.add('active');
-            });
-        });
-        
-        // AI button attention effect
-        document.addEventListener('DOMContentLoaded', function() {
-            // Adding a slight delay before showing the effect for better user experience
-            setTimeout(function() {
-                const aiButton = document.querySelector('.ai-fab');
-                aiButton.classList.add('attention');
-                
-                // Remove the effect after animation completes
-                setTimeout(function() {
-                    aiButton.classList.remove('attention');
-                }, 4000);
-            }, 1000);
-        });
-    </script>
 </body>
 </html>
-

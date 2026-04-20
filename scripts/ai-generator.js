@@ -1,268 +1,218 @@
-// API Key handling
+const AI_STORAGE_KEY = "openai_api_key";
+
+document.addEventListener("DOMContentLoaded", initializeAiGenerator);
+
+function initializeAiGenerator() {
+    const saveApiKeyBtn = document.getElementById("saveApiKeyBtn");
+    const generateAiBtn = document.getElementById("generateAiBtn");
+    const countButtons = Array.from(document.querySelectorAll(".ai-count-btn"));
+
+    saveApiKeyBtn.addEventListener("click", saveApiKey);
+    generateAiBtn.addEventListener("click", generateCardsWithAI);
+
+    countButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+            countButtons.forEach((item) => item.classList.remove("active"));
+            button.classList.add("active");
+        });
+    });
+
+    updateSavedKeyStatus();
+}
+
 function saveApiKey() {
-    // Get key from either old input or new modern input
-    const apiKey = document.getElementById('aiApiKey')?.value?.trim() || 
-                  document.getElementById('apiKey')?.value?.trim();
-                  
-    if (apiKey) {
-        localStorage.setItem('openai_api_key', apiKey);
-        
-        // Show success indicator on whichever button was clicked
-        const saveButton = document.activeElement || document.querySelector('.save-key-btn') || document.querySelector('.ai-btn');
-        const originalText = saveButton.innerHTML;
-        saveButton.innerHTML = '<i class="fas fa-check"></i> Saved!';
-        
-        // If it's the modern button, use its original style
-        if (saveButton.classList.contains('ai-btn')) {
-            saveButton.style.background = 'linear-gradient(135deg, #48bb78, #38a169)';
-        } else {
-            saveButton.style.background = 'linear-gradient(135deg, #38b2ac, #4fd1c5)';
-        }
-        
-        setTimeout(() => {
-            saveButton.innerHTML = originalText;
-            if (saveButton.classList.contains('ai-btn')) {
-                saveButton.style.background = 'linear-gradient(135deg, #6e8efb, #a777e3)';
-            } else {
-                saveButton.style.background = 'linear-gradient(135deg, #38b2ac, #4fd1c5)';
-            }
-        }, 2000);
-        
-        // Mask both inputs if they exist
-        if (document.getElementById('apiKey')) document.getElementById('apiKey').value = '••••••••';
-        if (document.getElementById('aiApiKey')) document.getElementById('aiApiKey').value = '••••••••';
-    } else {
-        alert('Please enter a valid API key');
+    const apiKeyInput = document.getElementById("aiApiKey");
+    const apiKey = apiKeyInput.value.trim();
+
+    if (!apiKey) {
+        setAiMessage("Enter a valid API key before saving it.", "error");
+        apiKeyInput.focus();
+        return;
+    }
+
+    localStorage.setItem(AI_STORAGE_KEY, apiKey);
+    apiKeyInput.value = "";
+    updateSavedKeyStatus();
+    setAiMessage("API key saved in this browser. You are ready to generate a draft.", "success");
+
+    if (window.QuizzyApp) {
+        window.QuizzyApp.showToast("API key saved for AI drafting.", "success");
     }
 }
 
-// Toggle AI section visibility (keep for backward compatibility)
-document.addEventListener('DOMContentLoaded', function() {
-    const toggleButton = document.getElementById('toggleAiSection');
-    const aiSection = document.getElementById('aiSection');
-    
-    if (toggleButton && aiSection) {
-        toggleButton.addEventListener('click', function() {
-            aiSection.classList.toggle('active');
-            
-            if (aiSection.classList.contains('active')) {
-                aiSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
-        });
-    }
-    
-    // Set up count button functionality
-    const countButtons = document.querySelectorAll('.count-btn, .ai-count-btn');
-    countButtons.forEach(button => {
-        button.addEventListener('click', function() {
-            const group = this.classList.contains('count-btn') ? '.count-btn' : '.ai-count-btn';
-            document.querySelectorAll(group).forEach(btn => btn.classList.remove('active'));
-            this.classList.add('active');
-        });
-    });
-    
-    // Load API key on page load
-    const savedKey = localStorage.getItem('openai_api_key');
-    if (savedKey) {
-        if (document.getElementById('apiKey')) document.getElementById('apiKey').value = '••••••••';
-        if (document.getElementById('aiApiKey')) document.getElementById('aiApiKey').value = '••••••••';
-    }
-});
+function updateSavedKeyStatus() {
+    const savedKey = localStorage.getItem(AI_STORAGE_KEY);
+    const status = document.getElementById("aiKeyStatus");
+    const input = document.getElementById("aiApiKey");
 
-// Generate cards with AI
+    if (savedKey) {
+        status.textContent = "API key saved in this browser. Paste a new one anytime to replace it.";
+        input.placeholder = "Saved locally in this browser";
+    } else {
+        status.textContent = "No API key saved in this browser yet.";
+        input.placeholder = "Paste your API key";
+    }
+}
+
 async function generateCardsWithAI() {
-    const apiKey = localStorage.getItem('openai_api_key');
+    const apiKey = localStorage.getItem(AI_STORAGE_KEY);
+    const title = document.getElementById("setTitle").value.trim();
+    const prompt = document.getElementById("aiPrompt").value.trim();
+    const progress = document.getElementById("aiProgress");
+    const success = document.getElementById("aiSuccess");
+    const generateButton = document.getElementById("generateAiBtn");
+
+    clearAiMessage();
+    success.hidden = true;
+
     if (!apiKey) {
-        alert('Please save your OpenAI API key first');
+        setAiMessage("Save your OpenAI API key before generating cards.", "error");
         return;
     }
-    
-    // Check both old and new UI elements for values
-    const title = document.getElementById('aiSetTitle')?.value?.trim();
-    const prompt = document.getElementById('aiPrompt')?.value?.trim();
-    
+
     if (!title) {
-        alert('Please enter a title for your flashcard set');
+        setAiMessage("Add a set title first so your generated draft has somewhere to land.", "error");
+        document.getElementById("setTitle").focus();
         return;
     }
-    
+
     if (!prompt) {
-        alert('Please describe what you want to study');
+        setAiMessage("Describe what you want to study before generating a draft.", "error");
+        document.getElementById("aiPrompt").focus();
         return;
     }
-    
-    // Get card count from selected button - check both UIs
-    let cardCount = 10; // default
-    const oldActiveBtn = document.querySelector('.count-btn.active');
-    const newActiveBtn = document.querySelector('.ai-count-btn.active');
-    
-    if (newActiveBtn && newActiveBtn.dataset.count === 'auto') {
-        cardCount = 'auto';
-    } else if (newActiveBtn) {
-        cardCount = parseInt(newActiveBtn.dataset.count);
-    } else if (oldActiveBtn) {
-        cardCount = parseInt(oldActiveBtn.dataset.count);
-    }
-    
-    // Show loading state in modern UI if available
-    const modernProgress = document.getElementById('aiProgress');
-    const modernSuccess = document.getElementById('aiSuccess');
-    const oldSpinner = document.getElementById('loadingSpinner');
-    
-    console.log('Loading status: Found progress element?', !!modernProgress);
-    
-    // Forcefully ensure the loading animation is displayed
-    if (modernProgress) {
-        console.log('Setting display to flex');
-        modernProgress.style.display = 'flex';
-        
-        // Make sure it's visible - force other properties too
-        modernProgress.style.opacity = '1';
-        modernProgress.style.visibility = 'visible';
-    }
-    
-    if (modernSuccess) modernSuccess.style.display = 'none';
-    if (oldSpinner) oldSpinner.style.display = 'flex';
-    
+
+    progress.hidden = false;
+    generateButton.disabled = true;
+
     try {
-        console.log('Starting API request...');
+        const selectedCountButton = document.querySelector(".ai-count-btn.active");
+        const cardCount = selectedCountButton ? selectedCountButton.dataset.count : "10";
         const cards = await fetchFlashcardsFromAI(apiKey, prompt, cardCount);
-        console.log('API request complete, cards received:', cards.length);
-        
-        if (cards.length > 0) {
-            createCardSetFromAI(title, cards);
-            
-            // Clear inputs in both UIs
-            if (document.getElementById('aiSetTitle')) document.getElementById('aiSetTitle').value = '';
-            if (document.getElementById('aiPrompt')) document.getElementById('aiPrompt').value = '';
-            
-            // Show success in modern UI
-            if (modernProgress && modernSuccess) {
-                modernProgress.style.display = 'none';
-                modernSuccess.style.display = 'flex';
-                
-                setTimeout(() => {
-                    if (modernSuccess) modernSuccess.style.display = 'none';
-                    toggleAiSection(); // Close the AI section
-                    document.getElementById('your-sets').scrollIntoView({ behavior: 'smooth' });
-                }, 2000);
-            }
-            
-            // If using old UI, show success there too
-            if (oldSpinner) {
-                oldSpinner.innerHTML = `
-                    <div style="font-size: 40px; color: #48bb78; margin-bottom: 10px;">
-                        <i class="fas fa-check-circle"></i>
-                    </div>
-                    <div class="generating-text">
-                        Successfully generated ${cards.length} flashcards!
-                    </div>
-                `;
-                
-                setTimeout(() => {
-                    if (oldSpinner) {
-                        oldSpinner.style.display = 'none';
-                        oldSpinner.innerHTML = `
-                            <div class="generating-animation">
-                                <div class="dot-flashing"></div>
-                            </div>
-                            <div class="generating-text">AI is creating your perfect study cards...</div>
-                        `;
-                    }
-                    
-                    // Close old AI section if it exists
-                    const oldAiSection = document.querySelector('.ai-generation-section');
-                    if (oldAiSection && oldAiSection.classList.contains('active')) {
-                        oldAiSection.classList.remove('active');
-                    }
-                    
-                    document.getElementById('your-sets').scrollIntoView({ behavior: 'smooth' });
-                }, 2000);
-            }
-        } else {
-            alert('Failed to generate cards. Please try a different prompt.');
-            if (modernProgress) modernProgress.style.display = 'none';
-            if (oldSpinner) oldSpinner.style.display = 'none';
+
+        if (!cards.length) {
+            throw new Error("The AI response did not contain any usable cards.");
         }
+
+        if (window.QuizzyApp) {
+            window.QuizzyApp.populateGeneratedDraft(title, cards);
+            window.QuizzyApp.showToast("AI draft added to the composer.", "success");
+        }
+
+        document.getElementById("aiPrompt").value = "";
+        progress.hidden = true;
+        success.hidden = false;
     } catch (error) {
-        console.error('Error generating cards:', error);
-        alert('Error generating cards: ' + error.message);
-        if (modernProgress) modernProgress.style.display = 'none';
-        if (oldSpinner) oldSpinner.style.display = 'none';
+        console.error("AI generation failed.", error);
+        progress.hidden = true;
+        setAiMessage(`Could not generate cards: ${error.message}`, "error");
+    } finally {
+        generateButton.disabled = false;
     }
 }
 
 async function fetchFlashcardsFromAI(apiKey, prompt, cardCount) {
-    let systemPrompt;
-    if (cardCount === 'auto') {
-        systemPrompt = `You are a helpful assistant creating an appropriate number of flashcards based on the user’s topic.
-        Each card must have a question and answer in the format:
-        
-        Q: [Question]
-        A: [Answer]`;
-    } else {
-        systemPrompt = `You are a helpful assistant that creates flashcards. Generate exactly ${cardCount} flashcards in the exact format shown below, with each card having a question and answer:
-        
-        Q: [Question 1]
-        A: [Answer 1]
-        
-        Q: [Question 2]
-        A: [Answer 2]
-        
-        Only respond with the flashcards in this exact format. Make the content accurate, educational, and useful for studying.`;
-    }
-    
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
+    const countInstruction = cardCount === "auto"
+        ? "Generate the number of flashcards that best fits the topic."
+        : `Generate exactly ${cardCount} flashcards.`;
+
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
         headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`
         },
         body: JSON.stringify({
             model: "gpt-4o-mini",
+            temperature: 0.6,
             messages: [
                 {
                     role: "system",
-                    content: systemPrompt
+                    content: [
+                        "You create accurate study flashcards.",
+                        countInstruction,
+                        "Return only flashcards in this exact format:",
+                        "Q: [Question]",
+                        "A: [Answer]"
+                    ].join("\n")
                 },
                 {
                     role: "user",
                     content: prompt
                 }
-            ],
-            temperature: 0.7
+            ]
         })
     });
-    
+
     if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error?.message || 'API request failed');
+        let message = "The AI request failed.";
+
+        try {
+            const errorData = await response.json();
+            message = errorData.error && errorData.error.message ? errorData.error.message : message;
+        } catch (error) {
+            console.error("Unable to parse AI error response.", error);
+        }
+
+        throw new Error(message);
     }
-    
+
     const data = await response.json();
-    const content = data.choices[0].message.content;
+    const content = data.choices && data.choices[0] && data.choices[0].message
+        ? data.choices[0].message.content
+        : "";
+
     return parseCardsFromResponse(content);
 }
 
 function parseCardsFromResponse(content) {
     const cards = [];
-    const lines = content.split('\n');
-    
-    for (let i = 0; i < lines.length - 1; i++) {
-        if (lines[i].startsWith('Q:') && lines[i + 1].startsWith('A:')) {
-            const question = lines[i].substring(2).trim();
-            const answer = lines[i + 1].substring(2).trim();
-            cards.push(new Card(question, answer));
-            i++;
+    const lines = content
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+    for (let index = 0; index < lines.length; index += 1) {
+        const questionLine = lines[index];
+        const answerLine = lines[index + 1];
+
+        if (!questionLine.startsWith("Q:") || !answerLine || !answerLine.startsWith("A:")) {
+            continue;
         }
+
+        const question = questionLine.slice(2).trim();
+        const answer = answerLine.slice(2).trim();
+
+        if (question && answer) {
+            cards.push(new Card(question, answer));
+        }
+
+        index += 1;
     }
-    
+
     return cards;
 }
 
-function createCardSetFromAI(title, cards) {
-    const newSet = new CardSet(title, cards);
-    cardSets.push(newSet);
-    saveSets();
-    updateSetList();
+function setAiMessage(message, tone) {
+    const messageElement = document.getElementById("aiFormMessage");
+
+    if (window.QuizzyApp) {
+        window.QuizzyApp.setInlineMessage(messageElement, message, tone);
+        return;
+    }
+
+    messageElement.hidden = false;
+    messageElement.textContent = message;
+}
+
+function clearAiMessage() {
+    const messageElement = document.getElementById("aiFormMessage");
+
+    if (window.QuizzyApp) {
+        window.QuizzyApp.clearInlineMessage(messageElement);
+        return;
+    }
+
+    messageElement.hidden = true;
+    messageElement.textContent = "";
 }

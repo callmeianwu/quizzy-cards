@@ -235,6 +235,7 @@ A: 4"></textarea>
                     <div class="study-progress-row">
                         <span class="study-chip"><strong id="remainingCount">0</strong> remaining</span>
                         <span class="study-chip" id="studyProgressLabel">Ready to begin</span>
+                        <span class="study-chip" id="studyScopeLabel">Whole set</span>
                     </div>
 
                     <div class="study-progress-bar" aria-hidden="true">
@@ -242,8 +243,46 @@ A: 4"></textarea>
                     </div>
                 </div>
 
-                <button class="secondary-btn compact-btn" type="button" id="restartStudyBtn">Restart</button>
+                <div class="study-header-actions">
+                    <button class="secondary-btn compact-btn" type="button" id="toggleStudySectionsBtn">Auto-Split</button>
+                    <button class="secondary-btn compact-btn" type="button" id="restartStudyBtn">Restart Round</button>
+                </div>
             </header>
+
+            <section class="study-section-manager" id="studySectionManager" hidden aria-labelledby="studySectionManagerTitle">
+                <div class="study-section-manager-header">
+                    <div>
+                        <p class="section-kicker">Sections</p>
+                        <h3 id="studySectionManagerTitle">Split this set into saved study chunks</h3>
+                        <p>Create persistent parts you can revisit later without losing adaptive progress.</p>
+                    </div>
+                    <button class="secondary-btn compact-btn" type="button" id="studyWholeSetBtn">Study Whole Set</button>
+                </div>
+
+                <div class="study-section-controls">
+                    <div class="study-section-size-group" aria-label="Section size">
+                        <button class="ai-count-btn active" type="button" data-section-size="5">5</button>
+                        <button class="ai-count-btn" type="button" data-section-size="10">10</button>
+                        <button class="ai-count-btn" type="button" data-section-size="custom">Custom</button>
+                    </div>
+
+                    <label class="study-section-custom">
+                        <span>Custom size</span>
+                        <input type="number" id="customSectionSizeInput" min="1" step="1" value="5">
+                    </label>
+
+                    <button class="primary-btn compact-btn" type="button" id="createStudySectionsBtn">Create Sections</button>
+                </div>
+
+                <p class="inline-message" id="studySectionsMessage" hidden></p>
+
+                <div class="study-section-list-header">
+                    <h4>Saved sections</h4>
+                    <p id="studySectionListMeta">No saved sections yet.</p>
+                </div>
+
+                <div class="study-section-list" id="studySectionList"></div>
+            </section>
 
             <main class="study-main">
                 <div class="study-stage">

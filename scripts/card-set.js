@@ -4,8 +4,14 @@ class CardSet {
         this.cards = cards;
         this.created = new Date();
         this.lastStudied = null;
+        this.studySections = [];
+        this.studyPrefs = createDefaultStudyPrefs();
     }
 }
+
+const EXPORT_VERSION = "1.1";
+const DEFAULT_CHUNK_SIZE = 5;
+const SECTION_SIZE_OPTIONS = [5, 10];
 
 const STORAGE_KEYS = {
     sets: "flashcardSets",
@@ -18,8 +24,12 @@ const state = {
     activeCreateTab: "manual",
     currentSetIndex: -1,
     currentCardIndex: -1,
-    masteredCards: 0,
     studyComplete: false,
+    studyCompletionRecorded: false,
+    studyManagerOpen: false,
+    studySectionSizeMode: String(DEFAULT_CHUNK_SIZE),
+    studyQueue: [],
+    studyScope: createEmptyStudyScope(),
     confirmAction: null
 };
 
@@ -68,11 +78,21 @@ function cacheDom() {
     dom.studyProgressLabel = document.getElementById("studyProgressLabel");
     dom.studyProgressFill = document.getElementById("studyProgressFill");
     dom.studySetTitle = document.getElementById("studySetTitle");
+    dom.studyScopeLabel = document.getElementById("studyScopeLabel");
     dom.studyHint = document.getElementById("studyHint");
     dom.studyActions = document.getElementById("studyActions");
     dom.ratingButtons = Array.from(document.querySelectorAll("[data-rating]"));
     dom.exitStudyBtn = document.getElementById("exitStudyBtn");
     dom.restartStudyBtn = document.getElementById("restartStudyBtn");
+    dom.toggleStudySectionsBtn = document.getElementById("toggleStudySectionsBtn");
+    dom.studySectionManager = document.getElementById("studySectionManager");
+    dom.studyWholeSetBtn = document.getElementById("studyWholeSetBtn");
+    dom.studySectionList = document.getElementById("studySectionList");
+    dom.studySectionListMeta = document.getElementById("studySectionListMeta");
+    dom.createStudySectionsBtn = document.getElementById("createStudySectionsBtn");
+    dom.customSectionSizeInput = document.getElementById("customSectionSizeInput");
+    dom.sectionSizeButtons = Array.from(document.querySelectorAll("[data-section-size]"));
+    dom.studySectionsMessage = document.getElementById("studySectionsMessage");
     dom.studySummary = document.getElementById("studySummary");
     dom.studySummaryText = document.getElementById("studySummaryText");
     dom.studyAgainBtn = document.getElementById("studyAgainBtn");
@@ -114,6 +134,14 @@ function bindEvents() {
     dom.restartStudyBtn.addEventListener("click", restartSession);
     dom.studyAgainBtn.addEventListener("click", restartSession);
     dom.returnToLibraryBtn.addEventListener("click", () => exitStudyMode("library-panel"));
+    dom.toggleStudySectionsBtn.addEventListener("click", toggleStudySectionManager);
+    dom.studyWholeSetBtn.addEventListener("click", () => activateStudyScope({ type: "full", sectionId: null }));
+    dom.createStudySectionsBtn.addEventListener("click", createStudySections);
+    dom.customSectionSizeInput.addEventListener("change", handleCustomSectionSizeChange);
+    dom.studySectionList.addEventListener("click", handleStudySectionListClick);
+    dom.sectionSizeButtons.forEach((button) => {
+        button.addEventListener("click", () => handleSectionSizeButtonClick(button.dataset.sectionSize));
+    });
     dom.confirmCancelBtn.addEventListener("click", closeConfirmDialog);
     dom.confirmApproveBtn.addEventListener("click", approveConfirmDialog);
 
@@ -132,6 +160,22 @@ function exposeAppBridge() {
         clearInlineMessage,
         getStudyCardContext,
         recordStudyAiExchange
+    };
+}
+
+function createDefaultStudyPrefs() {
+    return {
+        defaultChunkSize: DEFAULT_CHUNK_SIZE,
+        lastSectionId: null,
+        lastScopeType: "full"
+    };
+}
+
+function createEmptyStudyScope() {
+    return {
+        type: "full",
+        sectionId: null,
+        cardIndexes: []
     };
 }
 
@@ -181,19 +225,81 @@ function loadSavedSets() {
 function hydrateCardSet(rawSet) {
     const cards = Array.isArray(rawSet.cards) ? rawSet.cards.map(hydrateCard) : [];
     const set = new CardSet(rawSet.title || "Untitled Set", cards);
-    set.created = rawSet.created ? new Date(rawSet.created) : new Date();
-    set.lastStudied = rawSet.lastStudied ? new Date(rawSet.lastStudied) : null;
+    set.created = getValidDate(rawSet.created, new Date());
+    set.lastStudied = getValidDateOrNull(rawSet.lastStudied);
+    set.studySections = sanitizeStudySections(rawSet.studySections, cards.length);
+    set.studyPrefs = sanitizeStudyPrefs(rawSet.studyPrefs, set.studySections);
     return set;
 }
 
 function hydrateCard(rawCard) {
     const card = new Card(rawCard.question || "", rawCard.answer || "");
-    card.level = Number(rawCard.level) || 0;
-    card.attempts = Number(rawCard.attempts) || 0;
+    card.level = Math.max(0, Number(rawCard.level) || 0);
+    card.attempts = Math.max(0, Number(rawCard.attempts) || 0);
     card.mastered = Boolean(rawCard.mastered);
-    card.nextReview = rawCard.nextReview ? new Date(rawCard.nextReview) : new Date();
+    card.nextReview = getValidDate(rawCard.nextReview, new Date());
     card.aiHelpHistory = sanitizeAiHelpHistory(rawCard.aiHelpHistory);
     return card;
+}
+
+function sanitizeStudySections(entries, cardCount) {
+    if (!Array.isArray(entries)) {
+        return [];
+    }
+
+    const usedIds = new Set();
+
+    return entries.reduce((sections, entry, index) => {
+        const cardIndexes = Array.isArray(entry && entry.cardIndexes)
+            ? Array.from(new Set(entry.cardIndexes
+                .map((value) => Number(value))
+                .filter((value) => Number.isInteger(value) && value >= 0 && value < cardCount)))
+            : [];
+
+        if (cardIndexes.length === 0) {
+            return sections;
+        }
+
+        cardIndexes.sort((left, right) => left - right);
+
+        let id = typeof entry.id === "string" && entry.id.trim() ? entry.id.trim() : createStudySectionId(index);
+
+        while (usedIds.has(id)) {
+            id = createStudySectionId(index);
+        }
+
+        usedIds.add(id);
+
+        sections.push({
+            id,
+            label: typeof entry.label === "string" && entry.label.trim() ? entry.label.trim() : `Part ${index + 1}`,
+            cardIndexes,
+            size: Math.max(1, Number(entry.size) || cardIndexes.length),
+            createdAt: getValidTimestamp(entry.createdAt),
+            lastStudiedAt: getValidTimestampOrNull(entry.lastStudiedAt),
+            completedCount: Math.max(0, Number(entry.completedCount) || 0)
+        });
+
+        return sections;
+    }, []);
+}
+
+function sanitizeStudyPrefs(rawPrefs, studySections) {
+    const prefs = createDefaultStudyPrefs();
+    const parsedChunkSize = Math.max(1, Number(rawPrefs && rawPrefs.defaultChunkSize) || DEFAULT_CHUNK_SIZE);
+
+    prefs.defaultChunkSize = parsedChunkSize;
+
+    if (rawPrefs && rawPrefs.lastScopeType === "section" && typeof rawPrefs.lastSectionId === "string") {
+        const hasSection = studySections.some((section) => section.id === rawPrefs.lastSectionId);
+
+        if (hasSection) {
+            prefs.lastScopeType = "section";
+            prefs.lastSectionId = rawPrefs.lastSectionId;
+        }
+    }
+
+    return prefs;
 }
 
 function saveSets() {
@@ -363,6 +469,14 @@ function renderSetList() {
             status.textContent = set.lastStudied ? "Study ready" : "New set";
 
             meta.append(cardCount, status);
+
+            if (set.studySections.length > 0) {
+                const sectionCount = document.createElement("span");
+                sectionCount.className = "meta-pill";
+                sectionCount.textContent = `${set.studySections.length} section${set.studySections.length === 1 ? "" : "s"}`;
+                meta.appendChild(sectionCount);
+            }
+
             info.append(title, subhead, meta);
 
             const actions = document.createElement("div");
@@ -408,14 +522,34 @@ function updateRecentActivity() {
         dom.recentSetTitle.textContent = "Nothing studied yet";
         dom.recentSetMeta.textContent = "Your latest session will show up here once you start studying.";
         dom.resumeRecentBtn.disabled = true;
+        dom.resumeRecentBtn.textContent = "Study Latest Set";
         delete dom.resumeRecentBtn.dataset.index;
         return;
     }
 
     dom.recentSetTitle.textContent = mostRecent.set.title;
-    dom.recentSetMeta.textContent = `Studied ${formatDate(mostRecent.set.lastStudied)} • ${mostRecent.set.cards.length} cards`;
+    dom.recentSetMeta.textContent = `Studied ${formatDate(mostRecent.set.lastStudied)} | ${getRecentScopeLabel(mostRecent.set)}`;
     dom.resumeRecentBtn.disabled = false;
     dom.resumeRecentBtn.dataset.index = String(mostRecent.index);
+    dom.resumeRecentBtn.textContent = getResumeButtonText(mostRecent.set);
+}
+
+function getResumeButtonText(set) {
+    return getResumeScopeForSet(set).type === "section" ? "Resume Latest Section" : "Study Latest Set";
+}
+
+function getRecentScopeLabel(set) {
+    const scope = getResumeScopeForSet(set);
+
+    if (scope.type === "section") {
+        const section = findStudySectionById(set, scope.sectionId);
+
+        if (section) {
+            return `Section ${section.label}`;
+        }
+    }
+
+    return `${set.cards.length} cards`;
 }
 
 function findMostRecentSet() {
@@ -457,10 +591,27 @@ function handleSetListClick(event) {
 
 function handleResumeRecent() {
     const index = Number(dom.resumeRecentBtn.dataset.index);
+    const set = state.cardSets[index];
 
-    if (!Number.isNaN(index)) {
-        startStudySet(index);
+    if (!Number.isNaN(index) && set) {
+        startStudySet(index, getResumeScopeForSet(set));
     }
+}
+
+function getResumeScopeForSet(set) {
+    if (!set || !set.studyPrefs) {
+        return { type: "full", sectionId: null };
+    }
+
+    if (set.studyPrefs.lastScopeType === "section" && set.studyPrefs.lastSectionId) {
+        const section = findStudySectionById(set, set.studyPrefs.lastSectionId);
+
+        if (section) {
+            return { type: "section", sectionId: section.id };
+        }
+    }
+
+    return { type: "full", sectionId: null };
 }
 
 function exportAllSets() {
@@ -472,7 +623,7 @@ function exportAllSets() {
     downloadJson(
         `flashcard-sets-${getDateStamp()}.json`,
         {
-            version: "1.0",
+            version: EXPORT_VERSION,
             sets: state.cardSets,
             exportDate: new Date().toISOString()
         }
@@ -492,7 +643,7 @@ function exportSingleSet(index) {
     downloadJson(
         `flashcard-set-${sanitizeFilename(set.title)}-${getDateStamp()}.json`,
         {
-            version: "1.0",
+            version: EXPORT_VERSION,
             sets: [set],
             exportDate: new Date().toISOString()
         }
@@ -557,7 +708,7 @@ function handleImportChange(event) {
 }
 
 function validateImportedData(data) {
-    if (!data || data.version !== "1.0" || !Array.isArray(data.sets)) {
+    if (!data || !["1.0", EXPORT_VERSION].includes(data.version) || !Array.isArray(data.sets)) {
         return false;
     }
 
@@ -586,19 +737,12 @@ function handleImportedSets(importedSets) {
             duplicateCount += 1;
         }
 
-        const cards = importedSet.cards.map((card) => {
-            const hydrated = new Card(card.question, card.answer);
-            hydrated.level = Number(card.level) || 0;
-            hydrated.attempts = Number(card.attempts) || 0;
-            hydrated.mastered = Boolean(card.mastered);
-            hydrated.nextReview = card.nextReview ? new Date(card.nextReview) : new Date();
-            hydrated.aiHelpHistory = sanitizeAiHelpHistory(card.aiHelpHistory);
-            return hydrated;
-        });
-
+        const cards = importedSet.cards.map(hydrateCard);
         const newSet = new CardSet(title, cards);
-        newSet.created = importedSet.created ? new Date(importedSet.created) : new Date();
-        newSet.lastStudied = importedSet.lastStudied ? new Date(importedSet.lastStudied) : null;
+        newSet.created = getValidDate(importedSet.created, new Date());
+        newSet.lastStudied = getValidDateOrNull(importedSet.lastStudied);
+        newSet.studySections = sanitizeStudySections(importedSet.studySections, cards.length);
+        newSet.studyPrefs = sanitizeStudyPrefs(importedSet.studyPrefs, newSet.studySections);
 
         state.cardSets.push(newSet);
     });
@@ -619,6 +763,13 @@ function deleteSet(index) {
         confirmText: "Delete Set",
         onConfirm: () => {
             state.cardSets.splice(index, 1);
+
+            if (state.currentSetIndex === index) {
+                exitStudyMode("library-panel");
+            } else if (state.currentSetIndex > index) {
+                state.currentSetIndex -= 1;
+            }
+
             saveSets();
             renderDashboard();
             showToast("Set deleted.", "info");
@@ -648,7 +799,25 @@ function approveConfirmDialog() {
     }
 }
 
-function startStudySet(index) {
+function startStudySet(index, requestedScope = { type: "full", sectionId: null }) {
+    initializeStudySession(index, requestedScope, {
+        enterMode: true,
+        preserveManagerOpen: false
+    });
+}
+
+function activateStudyScope(requestedScope) {
+    if (state.currentSetIndex < 0) {
+        return;
+    }
+
+    initializeStudySession(state.currentSetIndex, requestedScope, {
+        enterMode: false,
+        preserveManagerOpen: true
+    });
+}
+
+function initializeStudySession(index, requestedScope, options = {}) {
     const set = state.cardSets[index];
 
     if (!set) {
@@ -656,18 +825,126 @@ function startStudySet(index) {
         return;
     }
 
+    const resolvedScope = resolveStudyScope(set, requestedScope);
+    const nowIso = new Date().toISOString();
+
     state.currentSetIndex = index;
-    state.masteredCards = 0;
-    state.studyComplete = false;
-    set.lastStudied = new Date();
-    resetStudyProgress(set.cards);
-    shuffleCards(set.cards);
-    state.currentCardIndex = findNextStudyCardIndex(0);
+    state.studyScope = resolvedScope;
+    state.studyQueue = buildStudyQueue(set, resolvedScope.cardIndexes);
+    state.currentCardIndex = state.studyQueue[0] ?? -1;
+    state.studyComplete = state.studyQueue.length === 0;
+    state.studyCompletionRecorded = false;
+    state.studyManagerOpen = Boolean(options.preserveManagerOpen) ? state.studyManagerOpen : false;
+    syncStudySectionSizeMode(set);
+
+    set.lastStudied = new Date(nowIso);
+
+    if (resolvedScope.type === "section") {
+        const section = findStudySectionById(set, resolvedScope.sectionId);
+
+        if (section) {
+            section.lastStudiedAt = nowIso;
+            set.studyPrefs.lastScopeType = "section";
+            set.studyPrefs.lastSectionId = section.id;
+        }
+    } else {
+        set.studyPrefs.lastScopeType = "full";
+        set.studyPrefs.lastSectionId = null;
+    }
+
     saveSets();
     renderDashboard();
-    enterStudyMode();
+
+    if (options.enterMode) {
+        enterStudyMode();
+    }
+
     renderStudyState();
-    dom.flashcard.focus();
+
+    if (options.enterMode) {
+        dom.flashcard.focus();
+    }
+}
+
+function resolveStudyScope(set, requestedScope) {
+    if (!set) {
+        return createEmptyStudyScope();
+    }
+
+    if (requestedScope && requestedScope.type === "section" && requestedScope.sectionId) {
+        const section = findStudySectionById(set, requestedScope.sectionId);
+
+        if (section) {
+            return {
+                type: "section",
+                sectionId: section.id,
+                cardIndexes: section.cardIndexes.slice()
+            };
+        }
+    }
+
+    return {
+        type: "full",
+        sectionId: null,
+        cardIndexes: set.cards.map((_, cardIndex) => cardIndex)
+    };
+}
+
+function buildStudyQueue(set, cardIndexes) {
+    const now = Date.now();
+    let queuedIndexes = cardIndexes.filter((cardIndex) => {
+        const card = set.cards[cardIndex];
+        return card && shouldIncludeCardInRound(card, now);
+    });
+
+    if (queuedIndexes.length === 0) {
+        queuedIndexes = cardIndexes.filter((cardIndex) => set.cards[cardIndex]);
+    }
+
+    return queuedIndexes
+        .slice()
+        .sort((leftIndex, rightIndex) => compareStudyPriority(set.cards[leftIndex], set.cards[rightIndex], leftIndex, rightIndex, now));
+}
+
+function shouldIncludeCardInRound(card, now) {
+    return !card.mastered || card.nextReview.getTime() <= now;
+}
+
+function compareStudyPriority(leftCard, rightCard, leftIndex, rightIndex, now) {
+    const leftPriority = getCardStudyPriority(leftCard, now);
+    const rightPriority = getCardStudyPriority(rightCard, now);
+
+    if (leftPriority !== rightPriority) {
+        return leftPriority - rightPriority;
+    }
+
+    const nextReviewDifference = leftCard.nextReview.getTime() - rightCard.nextReview.getTime();
+
+    if (nextReviewDifference !== 0) {
+        return nextReviewDifference;
+    }
+
+    if (leftCard.level !== rightCard.level) {
+        return leftCard.level - rightCard.level;
+    }
+
+    if (leftCard.attempts !== rightCard.attempts) {
+        return rightCard.attempts - leftCard.attempts;
+    }
+
+    return leftIndex - rightIndex;
+}
+
+function getCardStudyPriority(card, now) {
+    if (!card.mastered) {
+        return 0;
+    }
+
+    if (card.nextReview.getTime() <= now) {
+        return 1;
+    }
+
+    return 2;
 }
 
 function enterStudyMode() {
@@ -680,67 +957,26 @@ function exitStudyMode(returnPanel = "library-panel") {
     dom.appShell.hidden = false;
     state.currentSetIndex = -1;
     state.currentCardIndex = -1;
-    state.masteredCards = 0;
     state.studyComplete = false;
+    state.studyCompletionRecorded = false;
+    state.studyManagerOpen = false;
+    state.studyQueue = [];
+    state.studyScope = createEmptyStudyScope();
     switchPanel(returnPanel);
     renderStudyState();
 }
 
 function restartSession() {
-    const set = getCurrentSet();
-
-    if (!set) {
+    if (state.currentSetIndex < 0) {
         return;
     }
 
-    state.masteredCards = 0;
-    state.studyComplete = false;
-    resetStudyProgress(set.cards);
-    shuffleCards(set.cards);
-    state.currentCardIndex = findNextStudyCardIndex(0);
-    saveSets();
-    renderStudyState();
-}
-
-function resetStudyProgress(cards) {
-    cards.forEach((card) => {
-        card.level = 0;
-        card.attempts = 0;
-        card.mastered = false;
-        card.nextReview = new Date();
+    initializeStudySession(state.currentSetIndex, state.studyScope, {
+        enterMode: false,
+        preserveManagerOpen: true
     });
-}
 
-function shuffleCards(cards) {
-    for (let index = cards.length - 1; index > 0; index -= 1) {
-        const randomIndex = Math.floor(Math.random() * (index + 1));
-        [cards[index], cards[randomIndex]] = [cards[randomIndex], cards[index]];
-    }
-}
-
-function getCurrentSet() {
-    return state.cardSets[state.currentSetIndex] || null;
-}
-
-function findNextStudyCardIndex(startIndex) {
-    const set = getCurrentSet();
-
-    if (!set || set.cards.length === 0) {
-        return -1;
-    }
-
-    const total = set.cards.length;
-    const normalizedStart = ((startIndex % total) + total) % total;
-
-    for (let offset = 0; offset < total; offset += 1) {
-        const currentIndex = (normalizedStart + offset) % total;
-
-        if (!set.cards[currentIndex].mastered) {
-            return currentIndex;
-        }
-    }
-
-    return -1;
+    showToast("Round restarted without clearing your saved progress.", "info");
 }
 
 function flipFlashcard() {
@@ -765,36 +1001,61 @@ function rateCard(difficulty) {
     }
 
     currentCard.attempts += 1;
+    currentCard.level = Math.max(0, currentCard.level + getLevelDeltaForDifficulty(difficulty));
 
-    if (difficulty === 3) {
-        currentCard.level += 1;
-    } else if (difficulty === 1) {
-        currentCard.level = Math.max(0, currentCard.level - 1);
-    }
+    currentCard.mastered = currentCard.level >= 3;
 
     const hoursUntilNextReview = Math.pow(2, Math.max(currentCard.level, 0));
     currentCard.nextReview = new Date(Date.now() + hoursUntilNextReview * 60 * 60 * 1000);
 
-    if (currentCard.level >= 3 && !currentCard.mastered) {
-        currentCard.mastered = true;
-        state.masteredCards += 1;
+    if (state.studyQueue[0] === state.currentCardIndex) {
+        state.studyQueue.shift();
+    } else {
+        state.studyQueue = state.studyQueue.filter((cardIndex) => cardIndex !== state.currentCardIndex);
     }
 
-    if (state.masteredCards >= set.cards.length) {
-        state.studyComplete = true;
-        saveSets();
-        renderStudyState();
-        return;
+    if (!currentCard.mastered) {
+        state.studyQueue.push(state.currentCardIndex);
     }
 
-    state.currentCardIndex = findNextStudyCardIndex(state.currentCardIndex + 1);
+    state.currentCardIndex = state.studyQueue[0] ?? -1;
+    state.studyComplete = state.studyQueue.length === 0;
 
-    if (state.currentCardIndex === -1) {
-        state.studyComplete = true;
+    if (state.studyComplete) {
+        finalizeCompletedStudySession(set);
     }
 
     saveSets();
+    renderDashboard();
     renderStudyState();
+}
+
+function getLevelDeltaForDifficulty(difficulty) {
+    if (difficulty === 3) {
+        return 2;
+    }
+
+    if (difficulty === 2) {
+        return 1;
+    }
+
+    return -1;
+}
+
+function finalizeCompletedStudySession(set) {
+    if (state.studyCompletionRecorded || !set) {
+        return;
+    }
+
+    state.studyCompletionRecorded = true;
+
+    if (state.studyScope.type === "section") {
+        const section = findStudySectionById(set, state.studyScope.sectionId);
+
+        if (section) {
+            section.completedCount += 1;
+        }
+    }
 }
 
 function renderStudyState() {
@@ -807,31 +1068,43 @@ function renderStudyState() {
         dom.remainingCount.textContent = "0";
         dom.studyProgressLabel.textContent = "Ready to begin";
         dom.studyProgressFill.style.width = "0%";
+        dom.studyScopeLabel.textContent = "Whole set";
         dom.studySummary.hidden = true;
         dom.studyActions.hidden = false;
         dom.studyHint.hidden = false;
         dom.flashcard.classList.remove("flipped");
+        dom.toggleStudySectionsBtn.disabled = true;
+        dom.toggleStudySectionsBtn.textContent = "Auto-Split";
+        dom.studySectionManager.hidden = true;
+        clearInlineMessage(dom.studySectionsMessage);
         dispatchStudyContextChange(null);
         return;
     }
 
-    const totalCards = set.cards.length;
-    const remainingCards = Math.max(totalCards - state.masteredCards, 0);
-    const progressRatio = totalCards === 0 ? 0 : state.masteredCards / totalCards;
+    const totalCards = state.studyScope.cardIndexes.length;
+    const remainingCards = state.studyQueue.length;
+    const masteredInScope = countMasteredCards(set, state.studyScope.cardIndexes);
+    const progressRatio = totalCards === 0 ? 0 : masteredInScope / totalCards;
 
     dom.studySetTitle.textContent = set.title;
     dom.remainingCount.textContent = String(remainingCards);
     dom.studyProgressFill.style.width = `${progressRatio * 100}%`;
+    dom.studyScopeLabel.textContent = getStudyScopeLabel(set, state.studyScope);
+    dom.toggleStudySectionsBtn.disabled = false;
+
+    renderStudySectionManager();
 
     if (state.studyComplete) {
-        dom.studyProgressLabel.textContent = "Session complete";
+        const scopeLabel = state.studyScope.type === "section" ? "this section" : "this set";
+
+        dom.studyProgressLabel.textContent = "Round complete";
         dom.cardQuestion.textContent = "Nice work.";
-        dom.cardAnswer.textContent = "Take another pass or head back to your library.";
+        dom.cardAnswer.textContent = "Restart the round, switch sections, or head back to your library.";
         dom.flashcard.classList.remove("flipped");
         dom.studyHint.hidden = true;
         dom.studyActions.hidden = true;
         dom.studySummary.hidden = false;
-        dom.studySummaryText.textContent = `You mastered ${totalCards} card${totalCards === 1 ? "" : "s"} in this round.`;
+        dom.studySummaryText.textContent = `You mastered ${masteredInScope} of ${totalCards} card${totalCards === 1 ? "" : "s"} in ${scopeLabel}.`;
         dispatchStudyContextChange(null);
         return;
     }
@@ -846,12 +1119,113 @@ function renderStudyState() {
 
     dom.cardQuestion.textContent = card.question;
     dom.cardAnswer.textContent = card.answer;
-    dom.studyProgressLabel.textContent = `${state.masteredCards} of ${totalCards} mastered`;
+    dom.studyProgressLabel.textContent = `${masteredInScope} of ${totalCards} mastered`;
     dom.flashcard.classList.remove("flipped");
     dom.studyHint.hidden = false;
     dom.studyActions.hidden = false;
     dom.studySummary.hidden = true;
     dispatchStudyContextChange(getStudyCardContext());
+}
+
+function renderStudySectionManager() {
+    const set = getCurrentSet();
+
+    if (!set) {
+        return;
+    }
+
+    dom.toggleStudySectionsBtn.textContent = state.studyManagerOpen ? "Hide Auto-Split" : "Auto-Split";
+    dom.studySectionManager.hidden = !state.studyManagerOpen;
+    dom.studyWholeSetBtn.disabled = state.studyScope.type === "full";
+    dom.studySectionListMeta.textContent = set.studySections.length === 0
+        ? "No saved sections yet."
+        : `${set.studySections.length} saved section${set.studySections.length === 1 ? "" : "s"}.`;
+
+    renderStudySectionSizeControls(set);
+    renderStudySectionList(set);
+}
+
+function renderStudySectionSizeControls(set) {
+    const defaultChunkSize = set.studyPrefs ? set.studyPrefs.defaultChunkSize : DEFAULT_CHUNK_SIZE;
+    const customValue = Math.max(1, defaultChunkSize);
+
+    dom.customSectionSizeInput.value = String(customValue);
+
+    dom.sectionSizeButtons.forEach((button) => {
+        const isActive = button.dataset.sectionSize === state.studySectionSizeMode;
+        button.classList.toggle("active", isActive);
+    });
+}
+
+function renderStudySectionList(set) {
+    dom.studySectionList.innerHTML = "";
+
+    if (set.studySections.length === 0) {
+        const emptyState = document.createElement("div");
+        emptyState.className = "study-section-list-empty";
+        emptyState.textContent = "Create sections to save quick study chunks for this set.";
+        dom.studySectionList.appendChild(emptyState);
+        return;
+    }
+
+    set.studySections.forEach((section) => {
+        const sectionCard = document.createElement("article");
+        sectionCard.className = "study-section-list-item";
+
+        if (state.studyScope.type === "section" && state.studyScope.sectionId === section.id) {
+            sectionCard.classList.add("active");
+        }
+
+        const copy = document.createElement("div");
+        copy.className = "study-section-item-copy";
+
+        const title = document.createElement("h4");
+        title.textContent = section.label;
+
+        const range = document.createElement("p");
+        range.className = "study-section-range";
+        range.textContent = getStudySectionRangeText(section);
+
+        const progress = document.createElement("p");
+        progress.className = "study-section-progress";
+
+        const masteredCount = countMasteredCards(set, section.cardIndexes);
+        const dueCount = countDueCards(set, section.cardIndexes);
+        const lastStudiedText = section.lastStudiedAt ? `Last studied ${formatDate(section.lastStudiedAt)}` : "Not studied yet";
+
+        progress.textContent = `${masteredCount}/${section.cardIndexes.length} mastered | ${dueCount} due | ${lastStudiedText}`;
+
+        copy.append(title, range, progress);
+
+        const actions = document.createElement("div");
+        actions.className = "study-section-item-actions";
+
+        const studyButton = document.createElement("button");
+        studyButton.type = "button";
+        studyButton.className = state.studyScope.type === "section" && state.studyScope.sectionId === section.id
+            ? "primary-btn compact-btn"
+            : "secondary-btn compact-btn";
+        studyButton.textContent = state.studyScope.type === "section" && state.studyScope.sectionId === section.id
+            ? "Active Section"
+            : "Study Section";
+        studyButton.dataset.sectionAction = "study";
+        studyButton.dataset.sectionId = section.id;
+        studyButton.disabled = state.studyScope.type === "section" && state.studyScope.sectionId === section.id;
+
+        actions.appendChild(studyButton);
+        sectionCard.append(copy, actions);
+        dom.studySectionList.appendChild(sectionCard);
+    });
+}
+
+function getStudySectionRangeText(section) {
+    if (!section || section.cardIndexes.length === 0) {
+        return "No cards";
+    }
+
+    const firstCardNumber = section.cardIndexes[0] + 1;
+    const lastCardNumber = section.cardIndexes[section.cardIndexes.length - 1] + 1;
+    return `Cards ${firstCardNumber}-${lastCardNumber}`;
 }
 
 function handleComposerFocus() {
@@ -911,6 +1285,221 @@ function populateGeneratedDraft(title, cards) {
     setInlineMessage(dom.manualFormMessage, "AI draft added to the composer. Review it, tweak it, then save.", "success");
     dom.cardsList.focus();
     dom.cardsList.setSelectionRange(dom.cardsList.value.length, dom.cardsList.value.length);
+}
+
+function toggleStudySectionManager() {
+    if (!getCurrentSet()) {
+        return;
+    }
+
+    state.studyManagerOpen = !state.studyManagerOpen;
+    clearInlineMessage(dom.studySectionsMessage);
+    renderStudySectionManager();
+}
+
+function handleSectionSizeButtonClick(sizeKey) {
+    const set = getCurrentSet();
+
+    if (!set) {
+        return;
+    }
+
+    state.studySectionSizeMode = sizeKey;
+
+    if (sizeKey === "custom") {
+        dom.customSectionSizeInput.focus();
+    } else {
+        set.studyPrefs.defaultChunkSize = Number(sizeKey);
+        dom.customSectionSizeInput.value = String(Number(sizeKey));
+        saveSets();
+    }
+
+    renderStudySectionManager();
+}
+
+function handleCustomSectionSizeChange() {
+    const set = getCurrentSet();
+
+    if (!set) {
+        return;
+    }
+
+    const customSize = getCustomSectionSizeValue(set.cards.length);
+    state.studySectionSizeMode = "custom";
+    set.studyPrefs.defaultChunkSize = customSize;
+    dom.customSectionSizeInput.value = String(customSize);
+    saveSets();
+    renderStudySectionManager();
+}
+
+function getSelectedSectionSize(maxCards) {
+    if (state.studySectionSizeMode === "custom") {
+        return getCustomSectionSizeValue(maxCards);
+    }
+
+    return Math.max(1, Number(state.studySectionSizeMode) || DEFAULT_CHUNK_SIZE);
+}
+
+function getCustomSectionSizeValue(maxCards) {
+    const rawValue = Number(dom.customSectionSizeInput.value);
+    const fallback = maxCards > 0 ? Math.min(DEFAULT_CHUNK_SIZE, maxCards) : DEFAULT_CHUNK_SIZE;
+
+    if (!Number.isInteger(rawValue) || rawValue < 1) {
+        return fallback;
+    }
+
+    return rawValue;
+}
+
+function createStudySections() {
+    const set = getCurrentSet();
+
+    if (!set) {
+        return;
+    }
+
+    const chunkSize = getSelectedSectionSize(set.cards.length);
+
+    if (set.cards.length === 0) {
+        setInlineMessage(dom.studySectionsMessage, "This set does not have any cards to split yet.", "error");
+        return;
+    }
+
+    const applySections = () => {
+        set.studySections = buildStudySections(set.cards.length, chunkSize);
+        set.studyPrefs.defaultChunkSize = chunkSize;
+        set.studyPrefs.lastScopeType = "full";
+        set.studyPrefs.lastSectionId = null;
+
+        if (state.studyScope.type === "section" && !findStudySectionById(set, state.studyScope.sectionId)) {
+            state.studyScope = resolveStudyScope(set, { type: "full", sectionId: null });
+            state.studyQueue = buildStudyQueue(set, state.studyScope.cardIndexes);
+            state.currentCardIndex = state.studyQueue[0] ?? -1;
+            state.studyComplete = state.studyQueue.length === 0;
+            state.studyCompletionRecorded = false;
+        }
+
+        saveSets();
+        renderDashboard();
+        renderStudyState();
+        setInlineMessage(
+            dom.studySectionsMessage,
+            `Saved ${set.studySections.length} section${set.studySections.length === 1 ? "" : "s"} with chunk size ${chunkSize}.`,
+            "success"
+        );
+        showToast("Study sections saved for this set.", "success");
+    };
+
+    if (set.studySections.length > 0) {
+        showConfirmDialog({
+            title: "Replace saved sections?",
+            message: "Creating new sections will replace the current saved section layout for this set.",
+            confirmText: "Replace Sections",
+            onConfirm: applySections
+        });
+        return;
+    }
+
+    applySections();
+}
+
+function buildStudySections(cardCount, chunkSize) {
+    const sections = [];
+    let partNumber = 1;
+
+    for (let start = 0; start < cardCount; start += chunkSize) {
+        const end = Math.min(start + chunkSize, cardCount);
+        const cardIndexes = [];
+
+        for (let cardIndex = start; cardIndex < end; cardIndex += 1) {
+            cardIndexes.push(cardIndex);
+        }
+
+        sections.push({
+            id: createStudySectionId(partNumber),
+            label: `Part ${partNumber}`,
+            cardIndexes,
+            size: cardIndexes.length,
+            createdAt: new Date().toISOString(),
+            lastStudiedAt: null,
+            completedCount: 0
+        });
+
+        partNumber += 1;
+    }
+
+    return sections;
+}
+
+function handleStudySectionListClick(event) {
+    const button = event.target.closest("[data-section-action]");
+
+    if (!button || button.dataset.sectionAction !== "study") {
+        return;
+    }
+
+    activateStudyScope({
+        type: "section",
+        sectionId: button.dataset.sectionId
+    });
+}
+
+function syncStudySectionSizeMode(set) {
+    if (!set || !set.studyPrefs) {
+        state.studySectionSizeMode = String(DEFAULT_CHUNK_SIZE);
+        return;
+    }
+
+    const defaultChunkSize = Math.max(1, Number(set.studyPrefs.defaultChunkSize) || DEFAULT_CHUNK_SIZE);
+
+    state.studySectionSizeMode = SECTION_SIZE_OPTIONS.includes(defaultChunkSize)
+        ? String(defaultChunkSize)
+        : "custom";
+}
+
+function getCurrentSet() {
+    return state.cardSets[state.currentSetIndex] || null;
+}
+
+function findStudySectionById(set, sectionId) {
+    if (!set || !Array.isArray(set.studySections)) {
+        return null;
+    }
+
+    return set.studySections.find((section) => section.id === sectionId) || null;
+}
+
+function countMasteredCards(set, cardIndexes) {
+    return cardIndexes.reduce((count, cardIndex) => {
+        const card = set.cards[cardIndex];
+        return count + (card && card.mastered ? 1 : 0);
+    }, 0);
+}
+
+function countDueCards(set, cardIndexes) {
+    const now = Date.now();
+
+    return cardIndexes.reduce((count, cardIndex) => {
+        const card = set.cards[cardIndex];
+
+        if (!card) {
+            return count;
+        }
+
+        return count + (card.nextReview.getTime() <= now ? 1 : 0);
+    }, 0);
+}
+
+function getStudyScopeLabel(set, scope) {
+    if (scope.type === "section") {
+        const section = findStudySectionById(set, scope.sectionId);
+
+        if (section) {
+            return `Section: ${section.label} (${getStudySectionRangeText(section)})`;
+        }
+    }
+
+    return "Whole set";
 }
 
 function setInlineMessage(element, message, tone = "info") {
@@ -974,10 +1563,12 @@ function getStudyCardContext() {
         return null;
     }
 
+    const currentPosition = Math.max(state.studyScope.cardIndexes.length - state.studyQueue.length, 0);
+
     return {
         setTitle: set.title,
-        cardIndex: state.currentCardIndex,
-        totalCards: set.cards.length,
+        cardIndex: currentPosition,
+        totalCards: state.studyScope.cardIndexes.length,
         question: card.question,
         answer: card.answer
     };
@@ -1125,7 +1716,34 @@ function formatDateTime(dateValue) {
     }).format(date);
 }
 
+function createStudySectionId(seed) {
+    return `section-${Date.now()}-${seed}-${Math.floor(Math.random() * 100000)}`;
+}
+
+function getValidDate(dateValue, fallbackDate) {
+    const date = new Date(dateValue);
+    return Number.isNaN(date.getTime()) ? fallbackDate : date;
+}
+
+function getValidDateOrNull(dateValue) {
+    if (!dateValue) {
+        return null;
+    }
+
+    const date = new Date(dateValue);
+    return Number.isNaN(date.getTime()) ? null : date;
+}
+
 function getValidTimestamp(dateValue) {
     const date = new Date(dateValue);
     return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+}
+
+function getValidTimestampOrNull(dateValue) {
+    if (!dateValue) {
+        return null;
+    }
+
+    const date = new Date(dateValue);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }

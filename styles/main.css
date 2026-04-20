@@ -619,6 +619,69 @@ button:disabled {
     border-color: rgba(221, 78, 103, 0.18);
 }
 
+.set-ai-history {
+    grid-column: 1 / -1;
+    margin-top: 6px;
+    padding: 16px 18px;
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid var(--line);
+}
+
+.set-ai-history summary {
+    cursor: pointer;
+    font-weight: 700;
+    color: var(--ink);
+}
+
+.set-ai-history-content {
+    margin-top: 16px;
+    display: grid;
+    gap: 14px;
+}
+
+.set-ai-card {
+    padding: 16px;
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(255, 250, 244, 0.9), rgba(255, 255, 255, 0.96));
+    border: 1px solid rgba(30, 36, 64, 0.08);
+}
+
+.set-ai-card h5,
+.set-ai-entry p {
+    margin: 0;
+}
+
+.set-ai-card h5 {
+    font-family: "Bricolage Grotesque", sans-serif;
+    font-size: 1rem;
+}
+
+.set-ai-card-question,
+.set-ai-card-answer {
+    margin: 10px 0 0;
+    color: var(--muted);
+}
+
+.set-ai-entry {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(30, 36, 64, 0.08);
+    display: grid;
+    gap: 8px;
+}
+
+.set-ai-entry-meta {
+    font-size: 0.88rem;
+    color: var(--muted);
+}
+
+.set-ai-entry-user,
+.set-ai-entry-answer {
+    line-height: 1.55;
+    white-space: pre-wrap;
+}
+
 .flow-list {
     padding-left: 18px;
     margin: 14px 0 0;

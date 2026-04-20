@@ -130,7 +130,8 @@ function exposeAppBridge() {
         showToast,
         setInlineMessage,
         clearInlineMessage,
-        getStudyCardContext
+        getStudyCardContext,
+        recordStudyAiExchange
     };
 }
 
@@ -191,6 +192,7 @@ function hydrateCard(rawCard) {
     card.attempts = Number(rawCard.attempts) || 0;
     card.mastered = Boolean(rawCard.mastered);
     card.nextReview = rawCard.nextReview ? new Date(rawCard.nextReview) : new Date();
+    card.aiHelpHistory = sanitizeAiHelpHistory(rawCard.aiHelpHistory);
     return card;
 }
 
@@ -372,6 +374,13 @@ function renderSetList() {
 
             actions.append(studyButton, exportButton, deleteButton);
             card.append(info, actions);
+
+            const aiHistoryCount = countSetAiHistoryEntries(set);
+
+            if (aiHistoryCount > 0) {
+                card.appendChild(buildAiHistorySection(set, aiHistoryCount));
+            }
+
             dom.setList.appendChild(card);
         });
 }
@@ -583,6 +592,7 @@ function handleImportedSets(importedSets) {
             hydrated.attempts = Number(card.attempts) || 0;
             hydrated.mastered = Boolean(card.mastered);
             hydrated.nextReview = card.nextReview ? new Date(card.nextReview) : new Date();
+            hydrated.aiHelpHistory = sanitizeAiHelpHistory(card.aiHelpHistory);
             return hydrated;
         });
 
@@ -977,4 +987,145 @@ function dispatchStudyContextChange(context) {
     document.dispatchEvent(new CustomEvent("quizzy:study-card-change", {
         detail: context
     }));
+}
+
+function recordStudyAiExchange(entry) {
+    const set = getCurrentSet();
+
+    if (!set || state.studyComplete) {
+        return false;
+    }
+
+    const card = set.cards[state.currentCardIndex];
+
+    if (!card || !entry || typeof entry.userQuestion !== "string" || typeof entry.aiAnswer !== "string") {
+        return false;
+    }
+
+    const userQuestion = entry.userQuestion.trim();
+    const aiAnswer = entry.aiAnswer.trim();
+
+    if (!userQuestion || !aiAnswer) {
+        return false;
+    }
+
+    if (!Array.isArray(card.aiHelpHistory)) {
+        card.aiHelpHistory = [];
+    }
+
+    card.aiHelpHistory.unshift({
+        userQuestion,
+        aiAnswer,
+        createdAt: new Date().toISOString()
+    });
+
+    saveSets();
+    renderDashboard();
+    return true;
+}
+
+function sanitizeAiHelpHistory(entries) {
+    if (!Array.isArray(entries)) {
+        return [];
+    }
+
+    return entries
+        .filter((entry) => entry && typeof entry.userQuestion === "string" && typeof entry.aiAnswer === "string")
+        .map((entry) => ({
+            userQuestion: entry.userQuestion.trim(),
+            aiAnswer: entry.aiAnswer.trim(),
+            createdAt: getValidTimestamp(entry.createdAt)
+        }))
+        .filter((entry) => entry.userQuestion && entry.aiAnswer);
+}
+
+function countSetAiHistoryEntries(set) {
+    if (!set || !Array.isArray(set.cards)) {
+        return 0;
+    }
+
+    return set.cards.reduce((total, card) => {
+        const entries = Array.isArray(card.aiHelpHistory) ? card.aiHelpHistory.length : 0;
+        return total + entries;
+    }, 0);
+}
+
+function buildAiHistorySection(set, entryCount) {
+    const details = document.createElement("details");
+    details.className = "set-ai-history";
+
+    const summary = document.createElement("summary");
+    summary.textContent = `AI helper history (${entryCount})`;
+    details.appendChild(summary);
+
+    const content = document.createElement("div");
+    content.className = "set-ai-history-content";
+
+    set.cards.forEach((card, cardIndex) => {
+        if (!Array.isArray(card.aiHelpHistory) || card.aiHelpHistory.length === 0) {
+            return;
+        }
+
+        const cardSection = document.createElement("section");
+        cardSection.className = "set-ai-card";
+
+        const cardHeading = document.createElement("h5");
+        cardHeading.textContent = `Card ${cardIndex + 1}`;
+
+        const question = document.createElement("p");
+        question.className = "set-ai-card-question";
+        question.textContent = `Q: ${card.question}`;
+
+        const answer = document.createElement("p");
+        answer.className = "set-ai-card-answer";
+        answer.textContent = `A: ${card.answer}`;
+
+        cardSection.append(cardHeading, question, answer);
+
+        card.aiHelpHistory.forEach((entry) => {
+            const exchange = document.createElement("article");
+            exchange.className = "set-ai-entry";
+
+            const meta = document.createElement("p");
+            meta.className = "set-ai-entry-meta";
+            meta.textContent = `Asked ${formatDateTime(entry.createdAt)}`;
+
+            const userQuestion = document.createElement("p");
+            userQuestion.className = "set-ai-entry-user";
+            userQuestion.textContent = `You asked: ${entry.userQuestion}`;
+
+            const aiAnswer = document.createElement("p");
+            aiAnswer.className = "set-ai-entry-answer";
+            aiAnswer.textContent = `AI answered: ${entry.aiAnswer}`;
+
+            exchange.append(meta, userQuestion, aiAnswer);
+            cardSection.appendChild(exchange);
+        });
+
+        content.appendChild(cardSection);
+    });
+
+    details.appendChild(content);
+    return details;
+}
+
+function formatDateTime(dateValue) {
+    const date = new Date(dateValue);
+
+    if (Number.isNaN(date.getTime())) {
+        return "at an unknown time";
+    }
+
+    return new Intl.DateTimeFormat("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit"
+    }).format(date);
+}
+
+function getValidTimestamp(dateValue) {
+    const date = new Date(dateValue);
+    return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
 }

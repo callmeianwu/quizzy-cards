@@ -213,6 +213,13 @@ async function askStudyHelper() {
             return;
         }
 
+        if (window.QuizzyApp && typeof window.QuizzyApp.recordStudyAiExchange === "function") {
+            window.QuizzyApp.recordStudyAiExchange({
+                userQuestion: learnerQuestion,
+                aiAnswer: answer
+            });
+        }
+
         studyHelper.dom.response.textContent = answer;
         studyHelper.dom.response.hidden = false;
         setStudyHelperStatus(`Answer ready for card ${context.cardIndex + 1} of ${context.totalCards}.`, "success");

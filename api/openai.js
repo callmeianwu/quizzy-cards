@@ -6,61 +6,54 @@ const MAX_STUDY_QUESTION_LENGTH = 600;
 const MAX_CONTEXT_FIELD_LENGTH = 2_000;
 const ALLOWED_COUNTS = new Set(["5", "10", "15", "20", "auto"]);
 
-export default async function handler(request) {
+export default async function handler(request, response) {
     if (request.method === "GET") {
-        return jsonResponse({
+        return sendJson(response, {
             configured: Boolean(process.env.OPENAI_API_KEY)
         });
     }
 
     if (request.method !== "POST") {
-        return jsonResponse({
+        return sendJson(response, {
             error: "Method not allowed."
         }, 405);
     }
 
-    if (!process.env.OPENAI_API_KEY) {
-        return jsonResponse({
-            error: "AI service is not configured on the server."
-        }, 503);
-    }
-
     if (!isAllowedOrigin(request)) {
-        return jsonResponse({
+        return sendJson(response, {
             error: "This AI endpoint only accepts same-origin browser requests."
         }, 403);
     }
 
-    const contentLength = Number(request.headers.get("content-length") || 0);
+    const contentLength = Number(request.headers["content-length"] || 0);
 
     if (contentLength > MAX_BODY_BYTES) {
-        return jsonResponse({
+        return sendJson(response, {
             error: "Request payload is too large."
         }, 413);
     }
 
-    let payload;
+    const apiKey = readApiKey(request);
 
-    try {
-        payload = await request.json();
-    } catch (error) {
-        return jsonResponse({
-            error: "Request body must be valid JSON."
-        }, 400);
+    if (!apiKey) {
+        return sendJson(response, {
+            error: "AI service is not configured on the server."
+        }, 503);
     }
 
     try {
+        const payload = readJsonBody(request);
         const { mode, messages, temperature } = buildOpenAiRequest(payload);
-        const content = await requestOpenAi(messages, temperature);
+        const content = await requestOpenAi(apiKey, messages, temperature);
 
-        return jsonResponse({
+        return sendJson(response, {
             mode,
             content
         });
     } catch (error) {
         const status = Number(error.statusCode) || 400;
 
-        return jsonResponse({
+        return sendJson(response, {
             error: error.message || "The AI request failed."
         }, status);
     }
@@ -164,12 +157,12 @@ function buildStudyHelpMessages(payload) {
     ];
 }
 
-async function requestOpenAi(messages, temperature) {
+async function requestOpenAi(apiKey, messages, temperature) {
     const response = await fetch(OPENAI_API_URL, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
+            Authorization: `Bearer ${apiKey}`
         },
         body: JSON.stringify({
             model: OPENAI_MODEL,
@@ -206,19 +199,51 @@ async function requestOpenAi(messages, temperature) {
 }
 
 function isAllowedOrigin(request) {
-    const origin = request.headers.get("origin");
+    const origin = request.headers.origin;
 
     if (!origin) {
         return false;
     }
 
     try {
-        const requestUrl = new URL(request.url);
         const originUrl = new URL(origin);
-        return originUrl.origin === requestUrl.origin;
+        const host = request.headers["x-forwarded-host"] || request.headers.host;
+        const protocol = request.headers["x-forwarded-proto"] || "https";
+
+        if (!host) {
+            return false;
+        }
+
+        return originUrl.origin === `${protocol}://${host}`;
     } catch (error) {
         return false;
     }
+}
+
+function readApiKey(request) {
+    const headerValue = request.headers["x-openai-api-key"];
+
+    if (typeof headerValue === "string" && headerValue.trim()) {
+        return headerValue.trim();
+    }
+
+    return process.env.OPENAI_API_KEY || "";
+}
+
+function readJsonBody(request) {
+    if (request.body && typeof request.body === "object") {
+        return request.body;
+    }
+
+    if (typeof request.body === "string") {
+        try {
+            return JSON.parse(request.body);
+        } catch (error) {
+            throw createHttpError("Request body must be valid JSON.", 400);
+        }
+    }
+
+    throw createHttpError("Request body must be valid JSON.", 400);
 }
 
 function readBoundedString(value, fieldName, maxLength) {
@@ -245,12 +270,9 @@ function createHttpError(message, statusCode) {
     return error;
 }
 
-function jsonResponse(payload, status = 200) {
-    return new Response(JSON.stringify(payload), {
-        status,
-        headers: {
-            "Cache-Control": "no-store",
-            "Content-Type": "application/json; charset=utf-8"
-        }
-    });
+function sendJson(response, payload, status = 200) {
+    response.status(status);
+    response.setHeader("Cache-Control", "no-store");
+    response.setHeader("Content-Type", "application/json; charset=utf-8");
+    response.send(JSON.stringify(payload));
 }

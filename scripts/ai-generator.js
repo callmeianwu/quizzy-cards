@@ -264,19 +264,25 @@ async function fetchStudyHelpFromAI(learnerQuestion, context) {
 async function requestAi(payload) {
     const clientApiKey = getClientApiKey();
 
-    if (clientApiKey) {
+    if (clientApiKey && window.location.protocol === "file:") {
         return requestDirectOpenAi(clientApiKey, payload);
     }
 
-    return requestServerOpenAi(payload);
+    return requestServerOpenAi(payload, clientApiKey);
 }
 
-async function requestServerOpenAi(payload) {
+async function requestServerOpenAi(payload, clientApiKey = "") {
+    const headers = {
+        "Content-Type": "application/json"
+    };
+
+    if (clientApiKey) {
+        headers["X-OpenAI-Api-Key"] = clientApiKey;
+    }
+
     const response = await fetch(AI_PROXY_ENDPOINT, {
         method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
+        headers,
         body: JSON.stringify(payload)
     });
 

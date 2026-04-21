@@ -1,0 +1,258 @@
+const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
+const OPENAI_MODEL = "gpt-4o-mini";
+const MAX_BODY_BYTES = 20_000;
+const MAX_GENERATE_PROMPT_LENGTH = 2_500;
+const MAX_STUDY_QUESTION_LENGTH = 600;
+const MAX_CONTEXT_FIELD_LENGTH = 2_000;
+const ALLOWED_COUNTS = new Set(["5", "10", "15", "20", "auto"]);
+
+export default {
+    async fetch(request) {
+        if (request.method === "GET") {
+            return jsonResponse({
+                configured: Boolean(process.env.OPENAI_API_KEY)
+            });
+        }
+
+        if (request.method !== "POST") {
+            return jsonResponse({
+                error: "Method not allowed."
+            }, 405);
+        }
+
+        if (!process.env.OPENAI_API_KEY) {
+            return jsonResponse({
+                error: "AI service is not configured on the server."
+            }, 503);
+        }
+
+        if (!isAllowedOrigin(request)) {
+            return jsonResponse({
+                error: "This AI endpoint only accepts same-origin browser requests."
+            }, 403);
+        }
+
+        const contentLength = Number(request.headers.get("content-length") || 0);
+
+        if (contentLength > MAX_BODY_BYTES) {
+            return jsonResponse({
+                error: "Request payload is too large."
+            }, 413);
+        }
+
+        let payload;
+
+        try {
+            payload = await request.json();
+        } catch (error) {
+            return jsonResponse({
+                error: "Request body must be valid JSON."
+            }, 400);
+        }
+
+        try {
+            const { mode, messages, temperature } = buildOpenAiRequest(payload);
+            const content = await requestOpenAi(messages, temperature);
+
+            return jsonResponse({
+                mode,
+                content
+            });
+        } catch (error) {
+            const status = Number(error.statusCode) || 400;
+
+            return jsonResponse({
+                error: error.message || "The AI request failed."
+            }, status);
+        }
+    }
+};
+
+function buildOpenAiRequest(payload) {
+    const mode = payload && typeof payload.mode === "string" ? payload.mode : "";
+
+    if (mode === "generate") {
+        return {
+            mode,
+            temperature: 0.6,
+            messages: buildGenerateMessages(payload)
+        };
+    }
+
+    if (mode === "study-help") {
+        return {
+            mode,
+            temperature: 0.4,
+            messages: buildStudyHelpMessages(payload)
+        };
+    }
+
+    throw createHttpError("Unsupported AI request mode.", 400);
+}
+
+function buildGenerateMessages(payload) {
+    const prompt = readBoundedString(payload && payload.prompt, "Study topic", MAX_GENERATE_PROMPT_LENGTH);
+    const cardCount = String(payload && payload.cardCount ? payload.cardCount : "10");
+
+    if (!ALLOWED_COUNTS.has(cardCount)) {
+        throw createHttpError("Unsupported AI draft size.", 400);
+    }
+
+    const countInstruction = cardCount === "auto"
+        ? "Generate the number of flashcards that best fits the topic."
+        : `Generate exactly ${cardCount} flashcards.`;
+
+    return [
+        {
+            role: "system",
+            content: [
+                "You create accurate study flashcards.",
+                countInstruction,
+                "Return only flashcards in this exact format:",
+                "Q: [Question]",
+                "A: [Answer]"
+            ].join("\n")
+        },
+        {
+            role: "user",
+            content: prompt
+        }
+    ];
+}
+
+function buildStudyHelpMessages(payload) {
+    const learnerQuestion = readBoundedString(
+        payload && payload.learnerQuestion,
+        "Learner question",
+        MAX_STUDY_QUESTION_LENGTH
+    );
+    const context = payload && typeof payload.context === "object" ? payload.context : null;
+
+    if (!context) {
+        throw createHttpError("Study card context is required.", 400);
+    }
+
+    const setTitle = readBoundedString(context.setTitle, "Set title", 140);
+    const question = readBoundedString(context.question, "Card question", MAX_CONTEXT_FIELD_LENGTH);
+    const answer = readBoundedString(context.answer, "Card answer", MAX_CONTEXT_FIELD_LENGTH);
+    const cardIndex = Number(context.cardIndex);
+    const totalCards = Number(context.totalCards);
+
+    if (!Number.isInteger(cardIndex) || cardIndex < 0 || !Number.isInteger(totalCards) || totalCards < 1) {
+        throw createHttpError("Study card position is invalid.", 400);
+    }
+
+    return [
+        {
+            role: "system",
+            content: [
+                "You are a concise study helper inside a flashcard app.",
+                "Use the provided card question and card answer as the anchor context for every reply.",
+                "Keep the response practical and easy to study.",
+                "When useful, include one short example, analogy, or memory trick.",
+                "Do not ignore or contradict the card answer unless the user explicitly asks you to critique it."
+            ].join("\n")
+        },
+        {
+            role: "user",
+            content: [
+                `Set title: ${setTitle}`,
+                `Card number: ${cardIndex + 1} of ${totalCards}`,
+                `Card question: ${question}`,
+                `Card answer: ${answer}`,
+                `Learner question: ${learnerQuestion}`
+            ].join("\n")
+        }
+    ];
+}
+
+async function requestOpenAi(messages, temperature) {
+    const response = await fetch(OPENAI_API_URL, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
+        },
+        body: JSON.stringify({
+            model: OPENAI_MODEL,
+            temperature,
+            messages
+        })
+    });
+
+    let data = null;
+
+    try {
+        data = await response.json();
+    } catch (error) {
+        data = null;
+    }
+
+    if (!response.ok) {
+        const message = data && data.error && data.error.message
+            ? data.error.message
+            : "The AI request failed.";
+
+        throw createHttpError(message, response.status);
+    }
+
+    const content = data && data.choices && data.choices[0] && data.choices[0].message
+        ? data.choices[0].message.content
+        : "";
+
+    if (typeof content !== "string" || !content.trim()) {
+        throw createHttpError("The AI response came back empty.", 502);
+    }
+
+    return content.trim();
+}
+
+function isAllowedOrigin(request) {
+    const origin = request.headers.get("origin");
+
+    if (!origin) {
+        return false;
+    }
+
+    try {
+        const requestUrl = new URL(request.url);
+        const originUrl = new URL(origin);
+        return originUrl.origin === requestUrl.origin;
+    } catch (error) {
+        return false;
+    }
+}
+
+function readBoundedString(value, fieldName, maxLength) {
+    if (typeof value !== "string") {
+        throw createHttpError(`${fieldName} must be a string.`, 400);
+    }
+
+    const normalized = value.trim();
+
+    if (!normalized) {
+        throw createHttpError(`${fieldName} is required.`, 400);
+    }
+
+    if (normalized.length > maxLength) {
+        throw createHttpError(`${fieldName} is too long.`, 400);
+    }
+
+    return normalized;
+}
+
+function createHttpError(message, statusCode) {
+    const error = new Error(message);
+    error.statusCode = statusCode;
+    return error;
+}
+
+function jsonResponse(payload, status = 200) {
+    return new Response(JSON.stringify(payload), {
+        status,
+        headers: {
+            "Cache-Control": "no-store",
+            "Content-Type": "application/json; charset=utf-8"
+        }
+    });
+}

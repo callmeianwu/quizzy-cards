@@ -1,5 +1,6 @@
-const AI_STORAGE_KEY = "openai_api_key";
-const AI_CHAT_MODEL = "gpt-4o-mini";
+const AI_PROXY_ENDPOINT = "/api/openai";
+const MAX_GENERATE_PROMPT_LENGTH = 2500;
+const MAX_STUDY_QUESTION_LENGTH = 600;
 
 const studyHelper = {
     contextKey: "",
@@ -8,14 +9,19 @@ const studyHelper = {
     dom: {}
 };
 
+const aiService = {
+    checked: false,
+    available: false,
+    message: "Checking whether the secure AI connection is ready...",
+    tone: "info"
+};
+
 document.addEventListener("DOMContentLoaded", initializeAiGenerator);
 
-function initializeAiGenerator() {
-    const apiKeyForm = document.getElementById("apiKeyForm");
+async function initializeAiGenerator() {
     const generateAiBtn = document.getElementById("generateAiBtn");
-    const countButtons = Array.from(document.querySelectorAll(".ai-count-btn"));
+    const countButtons = Array.from(document.querySelectorAll("[data-count]"));
 
-    apiKeyForm.addEventListener("submit", handleApiKeySubmit);
     generateAiBtn.addEventListener("click", generateCardsWithAI);
 
     countButtons.forEach((button) => {
@@ -26,101 +32,10 @@ function initializeAiGenerator() {
     });
 
     initializeStudyHelper();
-    updateSavedKeyStatus();
-}
-
-function handleApiKeySubmit(event) {
-    event.preventDefault();
-    saveApiKey();
-}
-
-function initializeStudyHelper() {
-    studyHelper.dom.container = document.getElementById("studyAiHelper");
-
-    if (!studyHelper.dom.container) {
-        return;
-    }
-
-    studyHelper.dom.status = document.getElementById("studyAiStatus");
-    studyHelper.dom.questionInput = document.getElementById("studyAiQuestion");
-    studyHelper.dom.askButton = document.getElementById("askStudyAiBtn");
-    studyHelper.dom.response = document.getElementById("studyAiResponse");
-    studyHelper.dom.toggleButton = document.getElementById("toggleStudyAiBtn");
-
-    studyHelper.dom.toggleButton.addEventListener("click", toggleStudyHelperVisibility);
-    studyHelper.dom.askButton.addEventListener("click", askStudyHelper);
-    studyHelper.dom.questionInput.addEventListener("keydown", handleStudyHelperKeydown);
-    document.addEventListener("quizzy:study-card-change", handleStudyContextChange);
-
-    syncStudyHelperWithContext(getCurrentStudyContext());
-}
-
-function handleStudyHelperKeydown(event) {
-    if (event.key !== "Enter" || (!event.ctrlKey && !event.metaKey)) {
-        return;
-    }
-
-    event.preventDefault();
-    askStudyHelper();
-}
-
-function handleStudyContextChange(event) {
-    syncStudyHelperWithContext(event.detail || null);
-}
-
-function toggleStudyHelperVisibility() {
-    const context = getCurrentStudyContext();
-
-    if (!context) {
-        return;
-    }
-
-    studyHelper.isOpen = !studyHelper.isOpen;
-    renderStudyHelperVisibility();
-
-    if (studyHelper.isOpen && !studyHelper.dom.questionInput.disabled) {
-        studyHelper.dom.questionInput.focus();
-    }
-}
-
-function saveApiKey() {
-    const apiKeyInput = document.getElementById("aiApiKey");
-    const apiKey = apiKeyInput.value.trim();
-
-    if (!apiKey) {
-        setAiMessage("Enter a valid API key before saving it.", "error");
-        apiKeyInput.focus();
-        return;
-    }
-
-    localStorage.setItem(AI_STORAGE_KEY, apiKey);
-    apiKeyInput.value = "";
-    updateSavedKeyStatus();
-    setAiMessage("API key saved in this browser. You are ready to generate a draft.", "success");
-
-    if (window.QuizzyApp) {
-        window.QuizzyApp.showToast("API key saved for AI drafting.", "success");
-    }
-}
-
-function updateSavedKeyStatus() {
-    const savedKey = localStorage.getItem(AI_STORAGE_KEY);
-    const status = document.getElementById("aiKeyStatus");
-    const input = document.getElementById("aiApiKey");
-
-    if (savedKey) {
-        status.textContent = "API key saved in this browser. Paste a new one anytime to replace it.";
-        input.placeholder = "Saved locally in this browser";
-    } else {
-        status.textContent = "No API key saved in this browser yet.";
-        input.placeholder = "Paste your API key";
-    }
-
-    syncStudyHelperWithContext(getCurrentStudyContext());
+    await refreshAiAvailability();
 }
 
 async function generateCardsWithAI() {
-    const apiKey = localStorage.getItem(AI_STORAGE_KEY);
     const title = document.getElementById("setTitle").value.trim();
     const prompt = document.getElementById("aiPrompt").value.trim();
     const progress = document.getElementById("aiProgress");
@@ -130,13 +45,14 @@ async function generateCardsWithAI() {
     clearAiMessage();
     success.hidden = true;
 
-    if (!apiKey) {
-        setAiMessage("Save your OpenAI API key before generating cards.", "error");
+    if (!title) {
+        setAiMessage("Add a set title first so your generated draft has somewhere to land.", "error");
+        document.getElementById("setTitle").focus();
         return;
     }
 
-    if (!title) {
-        setAiMessage("Add a set title first so your generated draft has somewhere to land.", "error");
+    if (title.length > 120) {
+        setAiMessage("Keep the set title under 120 characters.", "error");
         document.getElementById("setTitle").focus();
         return;
     }
@@ -147,13 +63,24 @@ async function generateCardsWithAI() {
         return;
     }
 
+    if (prompt.length > MAX_GENERATE_PROMPT_LENGTH) {
+        setAiMessage(`Keep the study topic under ${MAX_GENERATE_PROMPT_LENGTH} characters.`, "error");
+        document.getElementById("aiPrompt").focus();
+        return;
+    }
+
+    if (!(await ensureAiServiceAvailable())) {
+        setAiMessage(aiService.message, aiService.tone === "success" ? "info" : aiService.tone);
+        return;
+    }
+
     progress.hidden = false;
     generateButton.disabled = true;
 
     try {
-        const selectedCountButton = document.querySelector(".ai-count-btn.active");
+        const selectedCountButton = document.querySelector("[data-count].active");
         const cardCount = selectedCountButton ? selectedCountButton.dataset.count : "10";
-        const cards = await fetchFlashcardsFromAI(apiKey, prompt, cardCount);
+        const cards = await fetchFlashcardsFromAI(prompt, cardCount);
 
         if (!cards.length) {
             throw new Error("The AI response did not contain any usable cards.");
@@ -171,8 +98,9 @@ async function generateCardsWithAI() {
         console.error("AI generation failed.", error);
         progress.hidden = true;
         setAiMessage(`Could not generate cards: ${error.message}`, "error");
+        await refreshAiAvailability();
     } finally {
-        generateButton.disabled = false;
+        generateButton.disabled = !aiService.available;
     }
 }
 
@@ -181,16 +109,8 @@ async function askStudyHelper() {
         return;
     }
 
-    const apiKey = localStorage.getItem(AI_STORAGE_KEY);
     const learnerQuestion = studyHelper.dom.questionInput.value.trim();
     const context = getCurrentStudyContext();
-
-    if (!apiKey) {
-        setStudyHelperStatus("Save your OpenAI API key in AI Generate to use this helper.", "warning");
-        studyHelper.dom.questionInput.disabled = true;
-        studyHelper.dom.askButton.disabled = true;
-        return;
-    }
 
     if (!context) {
         setStudyHelperStatus("Open a study card to ask the AI for help.", "warning");
@@ -203,6 +123,17 @@ async function askStudyHelper() {
         return;
     }
 
+    if (learnerQuestion.length > MAX_STUDY_QUESTION_LENGTH) {
+        setStudyHelperStatus(`Keep your question under ${MAX_STUDY_QUESTION_LENGTH} characters.`, "warning");
+        studyHelper.dom.questionInput.focus();
+        return;
+    }
+
+    if (!(await ensureAiServiceAvailable())) {
+        setStudyHelperStatus(aiService.message, aiService.tone === "success" ? "info" : aiService.tone);
+        return;
+    }
+
     const requestContextKey = buildStudyContextKey(context);
 
     studyHelper.isLoading = true;
@@ -212,7 +143,7 @@ async function askStudyHelper() {
     setStudyHelperStatus("Reading this card and preparing a quick explanation...", "info");
 
     try {
-        const answer = await fetchStudyHelpFromAI(apiKey, learnerQuestion, context);
+        const answer = await fetchStudyHelpFromAI(learnerQuestion, context);
 
         if (studyHelper.contextKey !== requestContextKey) {
             return;
@@ -231,6 +162,7 @@ async function askStudyHelper() {
     } catch (error) {
         console.error("Study helper failed.", error);
         setStudyHelperStatus(`Could not get AI help: ${error.message}`, "error");
+        await refreshAiAvailability();
     } finally {
         studyHelper.isLoading = false;
         studyHelper.dom.askButton.textContent = "Ask AI";
@@ -238,54 +170,22 @@ async function askStudyHelper() {
     }
 }
 
-async function fetchFlashcardsFromAI(apiKey, prompt, cardCount) {
-    const countInstruction = cardCount === "auto"
-        ? "Generate the number of flashcards that best fits the topic."
-        : `Generate exactly ${cardCount} flashcards.`;
-
-    const content = await requestChatCompletion(apiKey, [
-        {
-            role: "system",
-            content: [
-                "You create accurate study flashcards.",
-                countInstruction,
-                "Return only flashcards in this exact format:",
-                "Q: [Question]",
-                "A: [Answer]"
-            ].join("\n")
-        },
-        {
-            role: "user",
-            content: prompt
-        }
-    ], 0.6);
+async function fetchFlashcardsFromAI(prompt, cardCount) {
+    const content = await requestAi({
+        mode: "generate",
+        prompt,
+        cardCount
+    });
 
     return parseCardsFromResponse(content);
 }
 
-async function fetchStudyHelpFromAI(apiKey, learnerQuestion, context) {
-    const content = await requestChatCompletion(apiKey, [
-        {
-            role: "system",
-            content: [
-                "You are a concise study helper inside a flashcard app.",
-                "Use the provided card question and card answer as the anchor context for every reply.",
-                "Keep the response practical and easy to study.",
-                "When useful, include one short example, analogy, or memory trick.",
-                "Do not ignore or contradict the card answer unless the user explicitly asks you to critique it."
-            ].join("\n")
-        },
-        {
-            role: "user",
-            content: [
-                `Set title: ${context.setTitle}`,
-                `Card number: ${context.cardIndex + 1} of ${context.totalCards}`,
-                `Card question: ${context.question}`,
-                `Card answer: ${context.answer}`,
-                `Learner question: ${learnerQuestion}`
-            ].join("\n")
-        }
-    ], 0.4);
+async function fetchStudyHelpFromAI(learnerQuestion, context) {
+    const content = await requestAi({
+        mode: "study-help",
+        learnerQuestion,
+        context
+    });
 
     if (!content.trim()) {
         throw new Error("The AI response came back empty.");
@@ -294,37 +194,30 @@ async function fetchStudyHelpFromAI(apiKey, learnerQuestion, context) {
     return content.trim();
 }
 
-async function requestChatCompletion(apiKey, messages, temperature) {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+async function requestAi(payload) {
+    const response = await fetch(AI_PROXY_ENDPOINT, {
         method: "POST",
         headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`
+            "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-            model: AI_CHAT_MODEL,
-            temperature,
-            messages
-        })
+        body: JSON.stringify(payload)
     });
 
-    if (!response.ok) {
-        let message = "The AI request failed.";
+    let data = null;
 
-        try {
-            const errorData = await response.json();
-            message = errorData.error && errorData.error.message ? errorData.error.message : message;
-        } catch (error) {
-            console.error("Unable to parse AI error response.", error);
-        }
+    try {
+        data = await response.json();
+    } catch (error) {
+        data = null;
+    }
+
+    if (!response.ok) {
+        const message = data && data.error ? data.error : "The AI request failed.";
 
         throw new Error(message);
     }
 
-    const data = await response.json();
-    const content = data.choices && data.choices[0] && data.choices[0].message
-        ? data.choices[0].message.content
-        : "";
+    const content = data && typeof data.content === "string" ? data.content : "";
 
     return typeof content === "string" ? content : "";
 }
@@ -334,7 +227,6 @@ function syncStudyHelperWithContext(context) {
         return;
     }
 
-    const hasSavedKey = Boolean(localStorage.getItem(AI_STORAGE_KEY));
     const nextContextKey = context ? buildStudyContextKey(context) : "";
     const contextChanged = nextContextKey !== studyHelper.contextKey;
 
@@ -356,11 +248,11 @@ function syncStudyHelperWithContext(context) {
         return;
     }
 
-    if (!hasSavedKey) {
+    if (!aiService.available) {
         studyHelper.dom.questionInput.disabled = true;
         studyHelper.dom.askButton.disabled = true;
         studyHelper.dom.askButton.textContent = "Ask AI";
-        setStudyHelperStatus("Save your OpenAI API key in AI Generate to use this helper.", "warning");
+        setStudyHelperStatus(aiService.message, aiService.tone === "success" ? "info" : aiService.tone);
         renderStudyHelperVisibility();
         return;
     }
@@ -449,6 +341,121 @@ function renderStudyHelperVisibility() {
     studyHelper.dom.toggleButton.textContent = studyHelper.isOpen ? "Hide AI Helper" : "Open AI Helper";
     studyHelper.dom.toggleButton.setAttribute("aria-expanded", String(studyHelper.isOpen));
     studyHelper.dom.container.hidden = !studyHelper.isOpen;
+}
+
+async function refreshAiAvailability() {
+    if (window.location.protocol === "file:") {
+        setAiAvailability(
+            false,
+            "AI now runs through a secure Vercel function, so local file mode keeps manual and import features only.",
+            "warning"
+        );
+        return false;
+    }
+
+    setAiAvailability(false, "Checking whether the secure AI connection is ready...", "info");
+
+    try {
+        const response = await fetch(AI_PROXY_ENDPOINT, {
+            method: "GET",
+            cache: "no-store"
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data && data.error ? data.error : "The AI status check failed.");
+        }
+
+        if (data && data.configured) {
+            setAiAvailability(true, "AI is connected through your secure server setup.", "success");
+            return true;
+        }
+
+        setAiAvailability(false, "Add OPENAI_API_KEY to Vercel to enable AI drafting and helper answers.", "warning");
+        return false;
+    } catch (error) {
+        console.error("Unable to verify AI availability.", error);
+        setAiAvailability(false, "AI is unavailable right now. Redeploy with the `/api/openai` function and try again.", "error");
+        return false;
+    }
+}
+
+async function ensureAiServiceAvailable() {
+    if (aiService.available) {
+        return true;
+    }
+
+    return refreshAiAvailability();
+}
+
+function setAiAvailability(isAvailable, message, tone) {
+    const status = document.getElementById("aiKeyStatus");
+    const generateButton = document.getElementById("generateAiBtn");
+
+    aiService.checked = true;
+    aiService.available = isAvailable;
+    aiService.message = message;
+    aiService.tone = tone;
+
+    if (status) {
+        status.dataset.tone = tone;
+        status.textContent = message;
+    }
+
+    if (generateButton) {
+        generateButton.disabled = !isAvailable;
+    }
+
+    syncStudyHelperWithContext(getCurrentStudyContext());
+}
+
+function initializeStudyHelper() {
+    studyHelper.dom.container = document.getElementById("studyAiHelper");
+
+    if (!studyHelper.dom.container) {
+        return;
+    }
+
+    studyHelper.dom.status = document.getElementById("studyAiStatus");
+    studyHelper.dom.questionInput = document.getElementById("studyAiQuestion");
+    studyHelper.dom.askButton = document.getElementById("askStudyAiBtn");
+    studyHelper.dom.response = document.getElementById("studyAiResponse");
+    studyHelper.dom.toggleButton = document.getElementById("toggleStudyAiBtn");
+
+    studyHelper.dom.toggleButton.addEventListener("click", toggleStudyHelperVisibility);
+    studyHelper.dom.askButton.addEventListener("click", askStudyHelper);
+    studyHelper.dom.questionInput.addEventListener("keydown", handleStudyHelperKeydown);
+    document.addEventListener("quizzy:study-card-change", handleStudyContextChange);
+
+    syncStudyHelperWithContext(getCurrentStudyContext());
+}
+
+function handleStudyHelperKeydown(event) {
+    if (event.key !== "Enter" || (!event.ctrlKey && !event.metaKey)) {
+        return;
+    }
+
+    event.preventDefault();
+    askStudyHelper();
+}
+
+function handleStudyContextChange(event) {
+    syncStudyHelperWithContext(event.detail || null);
+}
+
+function toggleStudyHelperVisibility() {
+    const context = getCurrentStudyContext();
+
+    if (!context) {
+        return;
+    }
+
+    studyHelper.isOpen = !studyHelper.isOpen;
+    renderStudyHelperVisibility();
+
+    if (studyHelper.isOpen && !studyHelper.dom.questionInput.disabled) {
+        studyHelper.dom.questionInput.focus();
+    }
 }
 
 function setAiMessage(message, tone) {

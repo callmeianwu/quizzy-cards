@@ -12,6 +12,15 @@ class CardSet {
 const EXPORT_VERSION = "1.1";
 const DEFAULT_CHUNK_SIZE = 5;
 const SECTION_SIZE_OPTIONS = [5, 10];
+const MAX_SET_TITLE_LENGTH = 120;
+const MAX_CARDS_PER_SET = 200;
+const MAX_CARD_TEXT_LENGTH = 2000;
+const MAX_AI_HISTORY_ENTRIES = 10;
+const IMPORT_LIMITS = {
+    maxFileBytes: 1000000,
+    maxSets: 50,
+    maxTotalCards: 2000
+};
 
 const STORAGE_KEYS = {
     sets: "flashcardSets",
@@ -54,6 +63,7 @@ function cacheDom() {
     dom.cardsList = document.getElementById("cardsList");
     dom.saveSetBtn = document.getElementById("saveSetBtn");
     dom.exportAllSetsBtn = document.getElementById("exportAllSetsBtn");
+    dom.clearAllDataBtn = document.getElementById("clearAllDataBtn");
     dom.importTriggerBtn = document.getElementById("importTriggerBtn");
     dom.importFileInput = document.getElementById("importFileInput");
     dom.setList = document.getElementById("setList");
@@ -122,6 +132,7 @@ function bindEvents() {
     dom.cardsList.addEventListener("keydown", handleComposerKeydown);
     dom.cardsList.addEventListener("focus", handleComposerFocus);
     dom.exportAllSetsBtn.addEventListener("click", exportAllSets);
+    dom.clearAllDataBtn.addEventListener("click", clearAllData);
     dom.importTriggerBtn.addEventListener("click", () => dom.importFileInput.click());
     dom.importFileInput.addEventListener("change", handleImportChange);
     dom.setList.addEventListener("click", handleSetListClick);
@@ -369,6 +380,7 @@ function createSet() {
 
     const title = dom.setTitle.value.trim();
     const cards = parseCardsFromText(dom.cardsList.value);
+    const draftError = validateSetDraft(title, cards);
 
     if (!title) {
         setInlineMessage(dom.manualFormMessage, "Give your set a title before saving it.", "error");
@@ -379,6 +391,11 @@ function createSet() {
     if (cards.length === 0) {
         setInlineMessage(dom.manualFormMessage, "Add at least one valid `Q:` / `A:` pair before saving.", "error");
         dom.cardsList.focus();
+        return;
+    }
+
+    if (draftError) {
+        setInlineMessage(dom.manualFormMessage, draftError, "error");
         return;
     }
 
@@ -671,6 +688,12 @@ function handleImportChange(event) {
         return;
     }
 
+    if (file.size > IMPORT_LIMITS.maxFileBytes) {
+        setInlineMessage(dom.importMessage, "Import files must stay under 1 MB.", "error");
+        event.target.value = "";
+        return;
+    }
+
     clearInlineMessage(dom.importMessage);
 
     const reader = new FileReader();
@@ -678,9 +701,10 @@ function handleImportChange(event) {
     reader.onload = (loadEvent) => {
         try {
             const importedData = JSON.parse(loadEvent.target.result);
+            const validationError = validateImportedData(importedData);
 
-            if (!validateImportedData(importedData)) {
-                throw new Error("Please choose a Quizzy JSON export with valid sets.");
+            if (validationError) {
+                throw new Error(validationError);
             }
 
             const importedCount = handleImportedSets(importedData.sets);
@@ -709,22 +733,36 @@ function handleImportChange(event) {
 
 function validateImportedData(data) {
     if (!data || !["1.0", EXPORT_VERSION].includes(data.version) || !Array.isArray(data.sets)) {
-        return false;
+        return "Please choose a Quizzy JSON export with valid sets.";
     }
 
-    return data.sets.every((set) => {
+    if (data.sets.length === 0) {
+        return "The import file does not contain any sets.";
+    }
+
+    if (data.sets.length > IMPORT_LIMITS.maxSets) {
+        return `Import files can include up to ${IMPORT_LIMITS.maxSets} sets at a time.`;
+    }
+
+    const totalCards = data.sets.reduce((sum, set) => sum + (Array.isArray(set && set.cards) ? set.cards.length : 0), 0);
+
+    if (totalCards > IMPORT_LIMITS.maxTotalCards) {
+        return `Import files can include up to ${IMPORT_LIMITS.maxTotalCards} total cards.`;
+    }
+
+    for (const set of data.sets) {
         if (!set || typeof set.title !== "string" || !Array.isArray(set.cards)) {
-            return false;
+            return "Each imported set needs a title and a cards array.";
         }
 
-        return set.cards.every((card) => (
-            card
-            && typeof card.question === "string"
-            && typeof card.answer === "string"
-            && card.question.trim() !== ""
-            && card.answer.trim() !== ""
-        ));
-    });
+        const draftError = validateSetDraft(set.title, set.cards);
+
+        if (draftError) {
+            return `Import rejected for "${set.title || "Untitled Set"}": ${draftError}`;
+        }
+    }
+
+    return null;
 }
 
 function handleImportedSets(importedSets) {
@@ -773,6 +811,40 @@ function deleteSet(index) {
             saveSets();
             renderDashboard();
             showToast("Set deleted.", "info");
+        }
+    });
+}
+
+function clearAllData() {
+    showConfirmDialog({
+        title: "Clear all local data?",
+        message: "This removes every saved set, study section, and AI helper history from this browser.",
+        confirmText: "Clear Everything",
+        onConfirm: () => {
+            localStorage.removeItem(STORAGE_KEYS.sets);
+            localStorage.removeItem(STORAGE_KEYS.uiPrefs);
+            state.cardSets = [];
+            state.activePanel = "create-panel";
+            state.activeCreateTab = "manual";
+            state.currentSetIndex = -1;
+            state.currentCardIndex = -1;
+            state.studyComplete = false;
+            state.studyCompletionRecorded = false;
+            state.studyManagerOpen = false;
+            state.studySectionSizeMode = String(DEFAULT_CHUNK_SIZE);
+            state.studyQueue = [];
+            state.studyScope = createEmptyStudyScope();
+            dom.appShell.hidden = false;
+            dom.studyView.hidden = true;
+            dom.setTitle.value = "";
+            dom.cardsList.value = "";
+            dom.aiSuccess.hidden = true;
+            clearInlineMessage(dom.manualFormMessage);
+            clearInlineMessage(dom.importMessage);
+            clearInlineMessage(dom.aiFormMessage);
+            renderDashboard();
+            renderStudyState();
+            showToast("Local study data cleared from this browser.", "info");
         }
     });
 }
@@ -1609,6 +1681,7 @@ function recordStudyAiExchange(entry) {
         aiAnswer,
         createdAt: new Date().toISOString()
     });
+    card.aiHelpHistory = card.aiHelpHistory.slice(0, MAX_AI_HISTORY_ENTRIES);
 
     saveSets();
     renderDashboard();
@@ -1623,11 +1696,12 @@ function sanitizeAiHelpHistory(entries) {
     return entries
         .filter((entry) => entry && typeof entry.userQuestion === "string" && typeof entry.aiAnswer === "string")
         .map((entry) => ({
-            userQuestion: entry.userQuestion.trim(),
-            aiAnswer: entry.aiAnswer.trim(),
+            userQuestion: entry.userQuestion.trim().slice(0, MAX_CARD_TEXT_LENGTH),
+            aiAnswer: entry.aiAnswer.trim().slice(0, MAX_CARD_TEXT_LENGTH),
             createdAt: getValidTimestamp(entry.createdAt)
         }))
-        .filter((entry) => entry.userQuestion && entry.aiAnswer);
+        .filter((entry) => entry.userQuestion && entry.aiAnswer)
+        .slice(0, MAX_AI_HISTORY_ENTRIES);
 }
 
 function countSetAiHistoryEntries(set) {
@@ -1746,4 +1820,40 @@ function getValidTimestampOrNull(dateValue) {
 
     const date = new Date(dateValue);
     return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function validateSetDraft(title, cards) {
+    const normalizedTitle = typeof title === "string" ? title.trim() : "";
+
+    if (!normalizedTitle) {
+        return "Give your set a title before saving it.";
+    }
+
+    if (normalizedTitle.length > MAX_SET_TITLE_LENGTH) {
+        return `Keep the set title under ${MAX_SET_TITLE_LENGTH} characters.`;
+    }
+
+    if (!Array.isArray(cards) || cards.length === 0) {
+        return "Add at least one valid flashcard before saving.";
+    }
+
+    if (cards.length > MAX_CARDS_PER_SET) {
+        return `Keep each set to ${MAX_CARDS_PER_SET} cards or fewer.`;
+    }
+
+    const hasInvalidCard = cards.some((card) => (
+        !card
+        || typeof card.question !== "string"
+        || typeof card.answer !== "string"
+        || !card.question.trim()
+        || !card.answer.trim()
+        || card.question.trim().length > MAX_CARD_TEXT_LENGTH
+        || card.answer.trim().length > MAX_CARD_TEXT_LENGTH
+    ));
+
+    if (hasInvalidCard) {
+        return `Each question and answer must be present and stay under ${MAX_CARD_TEXT_LENGTH} characters.`;
+    }
+
+    return null;
 }

@@ -6,67 +6,65 @@ const MAX_STUDY_QUESTION_LENGTH = 600;
 const MAX_CONTEXT_FIELD_LENGTH = 2_000;
 const ALLOWED_COUNTS = new Set(["5", "10", "15", "20", "auto"]);
 
-export default {
-    async fetch(request) {
-        if (request.method === "GET") {
-            return jsonResponse({
-                configured: Boolean(process.env.OPENAI_API_KEY)
-            });
-        }
-
-        if (request.method !== "POST") {
-            return jsonResponse({
-                error: "Method not allowed."
-            }, 405);
-        }
-
-        if (!process.env.OPENAI_API_KEY) {
-            return jsonResponse({
-                error: "AI service is not configured on the server."
-            }, 503);
-        }
-
-        if (!isAllowedOrigin(request)) {
-            return jsonResponse({
-                error: "This AI endpoint only accepts same-origin browser requests."
-            }, 403);
-        }
-
-        const contentLength = Number(request.headers.get("content-length") || 0);
-
-        if (contentLength > MAX_BODY_BYTES) {
-            return jsonResponse({
-                error: "Request payload is too large."
-            }, 413);
-        }
-
-        let payload;
-
-        try {
-            payload = await request.json();
-        } catch (error) {
-            return jsonResponse({
-                error: "Request body must be valid JSON."
-            }, 400);
-        }
-
-        try {
-            const { mode, messages, temperature } = buildOpenAiRequest(payload);
-            const content = await requestOpenAi(messages, temperature);
-
-            return jsonResponse({
-                mode,
-                content
-            });
-        } catch (error) {
-            const status = Number(error.statusCode) || 400;
-
-            return jsonResponse({
-                error: error.message || "The AI request failed."
-            }, status);
-        }
+export default async function handler(request) {
+    if (request.method === "GET") {
+        return jsonResponse({
+            configured: Boolean(process.env.OPENAI_API_KEY)
+        });
     }
-};
+
+    if (request.method !== "POST") {
+        return jsonResponse({
+            error: "Method not allowed."
+        }, 405);
+    }
+
+    if (!process.env.OPENAI_API_KEY) {
+        return jsonResponse({
+            error: "AI service is not configured on the server."
+        }, 503);
+    }
+
+    if (!isAllowedOrigin(request)) {
+        return jsonResponse({
+            error: "This AI endpoint only accepts same-origin browser requests."
+        }, 403);
+    }
+
+    const contentLength = Number(request.headers.get("content-length") || 0);
+
+    if (contentLength > MAX_BODY_BYTES) {
+        return jsonResponse({
+            error: "Request payload is too large."
+        }, 413);
+    }
+
+    let payload;
+
+    try {
+        payload = await request.json();
+    } catch (error) {
+        return jsonResponse({
+            error: "Request body must be valid JSON."
+        }, 400);
+    }
+
+    try {
+        const { mode, messages, temperature } = buildOpenAiRequest(payload);
+        const content = await requestOpenAi(messages, temperature);
+
+        return jsonResponse({
+            mode,
+            content
+        });
+    } catch (error) {
+        const status = Number(error.statusCode) || 400;
+
+        return jsonResponse({
+            error: error.message || "The AI request failed."
+        }, status);
+    }
+}
 
 function buildOpenAiRequest(payload) {
     const mode = payload && typeof payload.mode === "string" ? payload.mode : "";

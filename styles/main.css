@@ -327,15 +327,31 @@ textarea:focus-visible {
     gap: 10px;
     flex-wrap: wrap;
     justify-content: flex-end;
+    align-items: center;
+    margin: 0;
+    padding: 0;
+    list-style: none;
 }
 
-.hero-chips span {
-    padding: 8px 12px;
-    background: rgba(255, 255, 255, 0.85);
-    border: 1px solid rgba(17, 24, 39, 0.08);
-    box-shadow: none;
-    color: var(--ink);
+.hero-chips li {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0;
+    color: rgba(36, 48, 77, 0.74);
+    font-size: 0.76rem;
     font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+
+.hero-chips li::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, rgba(255, 99, 61, 0.95), rgba(255, 215, 106, 0.9));
+    box-shadow: 0 0 0 4px rgba(255, 99, 61, 0.08);
 }
 
 .study-chip {

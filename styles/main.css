@@ -95,12 +95,12 @@ textarea:focus-visible {
 }
 
 .brand-mark {
-    width: 68px;
+    width: 150px;
     height: 68px;
     border-radius: 22px;
     display: grid;
     place-items: center;
-    background: linear-gradient(135deg, var(--accent), var(--yellow));
+    background: linear-gradient(135deg, var(--accent), var(--teal-soft));
     color: #fff;
     font-family: "Bricolage Grotesque", sans-serif;
     font-size: 1.9rem;

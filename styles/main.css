@@ -100,7 +100,7 @@ textarea:focus-visible {
     border-radius: 22px;
     display: grid;
     place-items: center;
-    background: linear-gradient(135deg, var(--accent), var(--teal-soft));
+    background: linear-gradient(135deg, var(--teal), var(--teal-soft));
     color: #fff;
     font-family: "Bricolage Grotesque", sans-serif;
     font-size: 1.9rem;

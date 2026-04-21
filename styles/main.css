@@ -4,6 +4,8 @@
     --surface: rgba(255, 255, 255, 0.82);
     --surface-strong: #ffffff;
     --surface-soft: #fff0df;
+    --surface-primary: rgba(255, 255, 255, 0.96);
+    --surface-secondary: rgba(255, 255, 255, 0.64);
     --surface-focus: #16213e;
     --ink: #1e2440;
     --muted: #66708b;
@@ -21,6 +23,8 @@
     --success-soft: #dbf7ed;
     --shadow: 0 24px 60px rgba(34, 35, 72, 0.14);
     --shadow-soft: 0 14px 30px rgba(34, 35, 72, 0.08);
+    --shadow-secondary: 0 12px 26px rgba(34, 35, 72, 0.06);
+    --shadow-primary: 0 28px 70px rgba(34, 35, 72, 0.16);
     --radius-xl: 32px;
     --radius-lg: 24px;
     --radius-md: 18px;
@@ -38,9 +42,9 @@ body {
     font-family: "Plus Jakarta Sans", sans-serif;
     color: var(--ink);
     background:
-        radial-gradient(circle at top left, rgba(255, 215, 106, 0.35), transparent 28%),
-        radial-gradient(circle at top right, rgba(22, 184, 166, 0.18), transparent 24%),
-        linear-gradient(180deg, #fff7ee 0%, #fffaf6 55%, #fff3e7 100%);
+        radial-gradient(circle at top left, rgba(255, 215, 106, 0.24), transparent 28%),
+        radial-gradient(circle at top right, rgba(22, 184, 166, 0.12), transparent 24%),
+        linear-gradient(180deg, #fdf1e3 0%, #fff6ed 55%, #fbe8d7 100%);
 }
 
 button,
@@ -79,6 +83,9 @@ textarea:focus-visible {
 }
 
 .sidebar {
+    background: var(--surface-secondary);
+    border-color: rgba(255, 255, 255, 0.5);
+    box-shadow: var(--shadow-secondary);
     padding: 26px;
     display: flex;
     flex-direction: column;
@@ -190,9 +197,9 @@ textarea:focus-visible {
 .sidebar-card {
     padding: 22px;
     border-radius: var(--radius-lg);
-    background: rgba(255, 255, 255, 0.68);
-    border: 1px solid var(--line);
-    box-shadow: var(--shadow-soft);
+    background: rgba(255, 255, 255, 0.54);
+    border: 1px solid rgba(30, 36, 64, 0.08);
+    box-shadow: 0 10px 22px rgba(34, 35, 72, 0.05);
 }
 
 .metric-grid {
@@ -204,8 +211,8 @@ textarea:focus-visible {
 .metric-card {
     padding: 18px;
     border-radius: var(--radius-md);
-    background: linear-gradient(180deg, #fff9f0, #ffffff);
-    border: 1px solid var(--line);
+    background: linear-gradient(180deg, rgba(255, 249, 240, 0.74), rgba(255, 255, 255, 0.86));
+    border: 1px solid rgba(30, 36, 64, 0.08);
 }
 
 .metric-card strong {
@@ -226,13 +233,13 @@ textarea:focus-visible {
 }
 
 .dashboard-hero {
-    padding: 28px 30px;
+    padding: 16px 18px;
     border-radius: var(--radius-xl);
     background:
-        radial-gradient(circle at top right, rgba(255, 215, 106, 0.36), transparent 28%),
-        linear-gradient(135deg, #fff0dc 0%, #ffffff 52%, #ecfffb 100%);
-    border: 1px solid rgba(255, 255, 255, 0.72);
-    box-shadow: var(--shadow);
+        radial-gradient(circle at top right, rgba(255, 215, 106, 0.08), transparent 28%),
+        linear-gradient(135deg, rgba(255, 244, 228, 0.38) 0%, rgba(255, 255, 255, 0.62) 52%, rgba(236, 255, 251, 0.34) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.34);
+    box-shadow: 0 8px 18px rgba(34, 35, 72, 0.03);
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
@@ -244,12 +251,15 @@ textarea:focus-visible {
 }
 
 .hero-copy h2 {
-    font-size: clamp(2rem, 3vw, 3.2rem);
-    max-width: 14ch;
+    font-size: clamp(1.35rem, 1.9vw, 1.85rem);
+    max-width: 18ch;
+    color: rgba(30, 36, 64, 0.9);
 }
 
 .hero-copy p:last-child {
     max-width: 60ch;
+    font-size: 0.93rem;
+    color: rgba(102, 112, 139, 0.78);
 }
 
 .hero-chips {
@@ -259,7 +269,15 @@ textarea:focus-visible {
     justify-content: flex-end;
 }
 
-.hero-chips span,
+.hero-chips span {
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.48);
+    border: 1px solid rgba(255, 255, 255, 0.34);
+    box-shadow: none;
+    color: rgba(30, 36, 64, 0.72);
+    font-weight: 600;
+}
+
 .study-chip {
     padding: 10px 14px;
     background: rgba(255, 255, 255, 0.88);
@@ -286,6 +304,156 @@ textarea:focus-visible {
 .workspace-panel {
     padding: 26px;
     animation: panel-rise 220ms ease;
+}
+
+#create-panel.workspace-panel {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 249, 242, 0.95));
+    border-color: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 34px 80px rgba(34, 35, 72, 0.18);
+    position: relative;
+    padding-top: 48px;
+}
+
+#create-panel.workspace-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    border: 1px solid rgba(22, 184, 166, 0.18);
+    pointer-events: none;
+}
+
+#create-panel.workspace-panel::after {
+    content: "";
+    position: absolute;
+    inset: 18px;
+    border-radius: calc(var(--radius-xl) - 10px);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0));
+    pointer-events: none;
+    z-index: 0;
+}
+
+#create-panel > * {
+    position: relative;
+    z-index: 1;
+}
+
+#create-panel .panel-heading {
+    margin-bottom: 14px;
+}
+
+#create-panel .panel-heading h3 {
+    font-size: clamp(2.2rem, 3.5vw, 2.95rem);
+    line-height: 1;
+    font-weight: 800;
+    color: #151b2f;
+}
+
+#create-panel .panel-heading p:last-child {
+    margin-top: 10px;
+    max-width: 52ch;
+    font-size: 0.98rem;
+}
+
+#create-panel .shared-title-field {
+    margin-top: 22px;
+}
+
+#create-panel .shared-title-field label,
+#manual-pane .field-label {
+    font-size: 1rem;
+}
+
+#create-panel .shared-title-field input {
+    padding: 18px 18px;
+    font-size: 1.05rem;
+    background: #ffffff;
+    border: 1px solid rgba(30, 36, 64, 0.14);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.82),
+        0 10px 22px rgba(34, 35, 72, 0.08);
+}
+
+#create-panel .tab-bar {
+    margin-top: 18px;
+    gap: 10px;
+}
+
+#create-panel .tab-btn {
+    padding: 13px 18px;
+    background: rgba(255, 255, 255, 0.46);
+    border: 1px solid rgba(30, 36, 64, 0.08);
+    color: rgba(102, 112, 139, 0.88);
+    box-shadow: none;
+}
+
+#create-panel .tab-btn.active {
+    background: linear-gradient(135deg, #ff7a59, #ef5b38);
+    border-color: rgba(239, 91, 56, 0.18);
+    color: #fff;
+    box-shadow: 0 16px 26px rgba(239, 91, 56, 0.26);
+}
+
+#create-panel .tab-btn:hover {
+    background: rgba(255, 255, 255, 0.72);
+}
+
+#manual-pane textarea {
+    padding: 18px 18px;
+    min-height: 268px;
+    font-size: 1.02rem;
+    background: #ffffff;
+    border: 1px solid rgba(30, 36, 64, 0.14);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.84),
+        0 18px 32px rgba(34, 35, 72, 0.1);
+}
+
+.context-column .workspace-panel {
+    background: rgba(255, 255, 255, 0.72);
+    border-color: rgba(255, 255, 255, 0.58);
+    box-shadow: var(--shadow-secondary);
+}
+
+#create-panel .create-pane {
+    margin-top: 16px;
+}
+
+#manual-pane .form-card {
+    padding: 24px;
+    background: linear-gradient(180deg, rgba(255, 245, 235, 0.84), rgba(255, 250, 244, 0.96));
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.7),
+        0 16px 36px rgba(34, 35, 72, 0.08);
+}
+
+#manual-pane .form-card-header {
+    margin-bottom: 18px;
+}
+
+#manual-pane .field-label {
+    margin-bottom: 12px;
+}
+
+#manual-pane .composer-footer {
+    margin-top: 18px;
+}
+
+#create-panel .shared-title-field input:hover,
+#manual-pane textarea:hover {
+    border-color: rgba(22, 184, 166, 0.24);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.84),
+        0 16px 30px rgba(34, 35, 72, 0.11);
+}
+
+#create-panel .shared-title-field input:focus,
+#manual-pane textarea:focus {
+    border-color: rgba(22, 184, 166, 0.46);
+    box-shadow:
+        0 0 0 5px rgba(22, 184, 166, 0.12),
+        0 22px 34px rgba(34, 35, 72, 0.12);
 }
 
 @keyframes panel-rise {

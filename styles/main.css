@@ -1523,6 +1523,59 @@ button:disabled {
     color: #ffd994;
 }
 
+.study-ai-setup-toggle {
+    margin-top: 12px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: rgba(255, 214, 187, 0.92);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.study-ai-setup-toggle:hover {
+    color: #fff0e6;
+}
+
+.study-ai-setup {
+    margin-top: 16px;
+    padding: 16px;
+    border-radius: 16px;
+    background: rgba(8, 15, 34, 0.34);
+    border: 1px solid rgba(255, 99, 61, 0.16);
+}
+
+.study-ai-setup .field-label {
+    display: block;
+    margin-bottom: 10px;
+    color: rgba(255, 255, 255, 0.86);
+}
+
+.study-ai-key-input {
+    width: 100%;
+    min-height: 48px;
+    padding: 13px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(8, 15, 34, 0.36);
+    color: #fff;
+    font: inherit;
+}
+
+.study-ai-key-input::placeholder {
+    color: rgba(255, 255, 255, 0.45);
+}
+
+.study-ai-setup .field-actions {
+    margin-top: 12px;
+}
+
+.study-ai-setup .helper-text {
+    margin-top: 10px;
+    color: rgba(255, 255, 255, 0.58);
+}
+
 .study-ai-input {
     min-height: 96px;
     margin-top: 14px;

@@ -9,6 +9,7 @@ const studyHelper = {
     contextKey: "",
     isLoading: false,
     isOpen: false,
+    isSetupOpen: true,
     dom: {}
 };
 
@@ -33,7 +34,7 @@ async function initializeAiGenerator() {
     }
 
     if (clearKeyBtn) {
-        clearKeyBtn.addEventListener("click", clearClientApiKey);
+        clearKeyBtn.addEventListener("click", () => clearClientApiKey("generator"));
     }
 
     generateAiBtn.addEventListener("click", generateCardsWithAI);
@@ -52,54 +53,80 @@ async function initializeAiGenerator() {
 
 function handleApiKeySubmit(event) {
     event.preventDefault();
-    saveClientApiKey();
+    saveClientApiKey(document.getElementById("aiApiKey"), "generator");
 }
 
-function saveClientApiKey() {
-    const input = document.getElementById("aiApiKey");
+function handleStudyHelperApiKeySubmit(event) {
+    event.preventDefault();
+    saveClientApiKey(studyHelper.dom.apiKeyInput, "study");
+}
+
+function saveClientApiKey(input, source = "generator") {
+    if (!input) {
+        return;
+    }
+
     const apiKey = input.value.trim();
 
     if (!apiKey) {
-        setAiMessage("Paste your OpenAI API key first.", "error");
+        setApiKeyFeedback("Paste your OpenAI API key first.", "error", source);
         input.focus();
         return;
     }
 
     sessionStorage.setItem(CLIENT_AI_STORAGE_KEY, apiKey);
-    input.value = "";
-    setAiMessage("Your key is ready to use in this tab.", "success");
+    studyHelper.isSetupOpen = false;
+    clearApiKeyInputs();
+    setApiKeyFeedback("Your key is ready to use in this tab.", "success", source);
     updateApiKeyInputState();
     refreshAiAvailability();
 }
 
-function clearClientApiKey() {
+function clearClientApiKey(source = "generator") {
     sessionStorage.removeItem(CLIENT_AI_STORAGE_KEY);
+    studyHelper.isSetupOpen = true;
+    clearApiKeyInputs();
     updateApiKeyInputState();
-    setAiMessage("Your key was removed from this tab.", "info");
+    setApiKeyFeedback("Your key was removed from this tab.", "info", source);
     refreshAiAvailability();
 }
 
 function updateApiKeyInputState() {
-    const input = document.getElementById("aiApiKey");
-    const clearButton = document.getElementById("clearApiKeyBtn");
-    const helpText = document.getElementById("aiKeyHelp");
     const hasClientKey = Boolean(getClientApiKey());
+    const setupSurfaces = [
+        {
+            input: document.getElementById("aiApiKey"),
+            clearButton: document.getElementById("clearApiKeyBtn"),
+            helpText: document.getElementById("aiKeyHelp"),
+            inactiveHelp: "Optional: use your own key in this tab only. It disappears when you close the tab.",
+            activeHelp: "Your key is only saved in this tab."
+        },
+        {
+            input: studyHelper.dom.apiKeyInput,
+            clearButton: studyHelper.dom.clearApiKeyButton,
+            helpText: studyHelper.dom.apiKeyHelp,
+            inactiveHelp: "Use a tab-only key here if the server key is not configured.",
+            activeHelp: "Your key is only saved in this tab."
+        }
+    ];
 
-    if (input) {
-        input.placeholder = hasClientKey
-            ? "A tab-only key is active"
-            : "Paste your own OpenAI API key";
-    }
+    setupSurfaces.forEach((surface) => {
+        if (surface.input) {
+            surface.input.placeholder = hasClientKey
+                ? "A tab-only key is active"
+                : "Paste your own OpenAI API key";
+        }
 
-    if (clearButton) {
-        clearButton.disabled = !hasClientKey;
-    }
+        if (surface.clearButton) {
+            surface.clearButton.disabled = !hasClientKey;
+        }
 
-    if (helpText) {
-        helpText.textContent = hasClientKey
-            ? "Your key is only saved in this tab."
-            : "Optional: use your own key in this tab only. It disappears when you close the tab.";
-    }
+        if (surface.helpText) {
+            surface.helpText.textContent = hasClientKey ? surface.activeHelp : surface.inactiveHelp;
+        }
+    });
+
+    updateStudyHelperSetupVisibility();
 }
 
 async function generateCardsWithAI() {
@@ -429,7 +456,7 @@ function syncStudyHelperWithContext(context) {
         studyHelper.dom.questionInput.disabled = true;
         studyHelper.dom.askButton.disabled = true;
         studyHelper.dom.askButton.textContent = "Ask AI";
-        setStudyHelperStatus(aiService.message, aiService.tone === "success" ? "info" : aiService.tone);
+        setStudyHelperStatus(getStudyHelperUnavailableMessage(), aiService.tone === "success" ? "info" : aiService.tone);
         renderStudyHelperVisibility();
         return;
     }
@@ -605,6 +632,7 @@ function setAiAvailability(isAvailable, message, tone, mode) {
         generateButton.disabled = !isAvailable;
     }
 
+    updateStudyHelperSetupVisibility();
     syncStudyHelperWithContext(getCurrentStudyContext());
 }
 
@@ -620,10 +648,25 @@ function initializeStudyHelper() {
     studyHelper.dom.askButton = document.getElementById("askStudyAiBtn");
     studyHelper.dom.response = document.getElementById("studyAiResponse");
     studyHelper.dom.toggleButton = document.getElementById("toggleStudyAiBtn");
+    studyHelper.dom.setupToggleButton = document.getElementById("studyAiSetupToggleBtn");
+    studyHelper.dom.setupForm = document.getElementById("studyAiKeyForm");
+    studyHelper.dom.apiKeyInput = document.getElementById("studyAiApiKey");
+    studyHelper.dom.clearApiKeyButton = document.getElementById("clearStudyAiApiKeyBtn");
+    studyHelper.dom.apiKeyHelp = document.getElementById("studyAiKeyHelp");
+    studyHelper.isSetupOpen = !Boolean(getClientApiKey());
 
     studyHelper.dom.toggleButton.addEventListener("click", toggleStudyHelperVisibility);
     studyHelper.dom.askButton.addEventListener("click", askStudyHelper);
     studyHelper.dom.questionInput.addEventListener("keydown", handleStudyHelperKeydown);
+    if (studyHelper.dom.setupToggleButton) {
+        studyHelper.dom.setupToggleButton.addEventListener("click", toggleStudyHelperSetupVisibility);
+    }
+    if (studyHelper.dom.setupForm) {
+        studyHelper.dom.setupForm.addEventListener("submit", handleStudyHelperApiKeySubmit);
+    }
+    if (studyHelper.dom.clearApiKeyButton) {
+        studyHelper.dom.clearApiKeyButton.addEventListener("click", () => clearClientApiKey("study"));
+    }
     document.addEventListener("quizzy:study-card-change", handleStudyContextChange);
 
     syncStudyHelperWithContext(getCurrentStudyContext());
@@ -657,8 +700,73 @@ function toggleStudyHelperVisibility() {
     }
 }
 
+function toggleStudyHelperSetupVisibility() {
+    studyHelper.isSetupOpen = !studyHelper.isSetupOpen;
+    updateStudyHelperSetupVisibility();
+
+    if (studyHelper.isSetupOpen && studyHelper.dom.apiKeyInput) {
+        studyHelper.dom.apiKeyInput.focus();
+    }
+}
+
 function getClientApiKey() {
     return sessionStorage.getItem(CLIENT_AI_STORAGE_KEY) || "";
+}
+
+function clearApiKeyInputs() {
+    const inputs = [
+        document.getElementById("aiApiKey"),
+        studyHelper.dom.apiKeyInput
+    ];
+
+    inputs.forEach((input) => {
+        if (input) {
+            input.value = "";
+        }
+    });
+}
+
+function setApiKeyFeedback(message, tone, source) {
+    if (source === "study") {
+        setStudyHelperStatus(message, tone);
+        return;
+    }
+
+    setAiMessage(message, tone);
+}
+
+function getStudyHelperUnavailableMessage() {
+    if (window.location.protocol === "file:") {
+        return "Paste your OpenAI key into the setup box below to use the helper in this tab.";
+    }
+
+    if (aiService.serverAvailable) {
+        return "AI is ready to use for this card.";
+    }
+
+    return "AI is not set up yet. Paste your OpenAI key into the setup box below, or configure the server key.";
+}
+
+function updateStudyHelperSetupVisibility() {
+    if (!studyHelper.dom.setupForm || !studyHelper.dom.setupToggleButton) {
+        return;
+    }
+
+    const hasClientKey = Boolean(getClientApiKey());
+    const canShowSetup = !aiService.serverAvailable || hasClientKey;
+
+    if (!canShowSetup) {
+        studyHelper.isSetupOpen = false;
+        studyHelper.dom.setupForm.hidden = true;
+        studyHelper.dom.setupToggleButton.hidden = true;
+        studyHelper.dom.setupToggleButton.setAttribute("aria-expanded", "false");
+        return;
+    }
+
+    studyHelper.dom.setupToggleButton.hidden = false;
+    studyHelper.dom.setupToggleButton.textContent = studyHelper.isSetupOpen ? "Hide key setup" : "Show key setup";
+    studyHelper.dom.setupToggleButton.setAttribute("aria-expanded", String(studyHelper.isSetupOpen));
+    studyHelper.dom.setupForm.hidden = !studyHelper.isSetupOpen;
 }
 
 function setAiMessage(message, tone) {

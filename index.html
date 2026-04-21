@@ -340,7 +340,27 @@ A: 4"></textarea>
                             <span class="study-ai-badge">Current card context</span>
                         </div>
 
-                        <p class="study-ai-status" id="studyAiStatus">Save your OpenAI API key in AI Generate to use this helper.</p>
+                        <p class="study-ai-status" id="studyAiStatus">Set up AI below to ask about this card.</p>
+                        <button class="study-ai-setup-toggle" type="button" id="studyAiSetupToggleBtn" hidden aria-expanded="true" aria-controls="studyAiKeyForm">
+                            Hide key setup
+                        </button>
+
+                        <form class="study-ai-setup" id="studyAiKeyForm" hidden>
+                            <label class="field-label" for="studyAiApiKey">Use your own OpenAI API key</label>
+                            <div class="field-inline study-ai-key-inline">
+                                <input
+                                    type="password"
+                                    id="studyAiApiKey"
+                                    class="study-ai-key-input"
+                                    placeholder="Paste your own OpenAI API key"
+                                >
+                                <button class="secondary-btn compact-btn" type="submit">Use My Key</button>
+                            </div>
+                            <div class="field-actions">
+                                <button class="ghost-inline-btn" type="button" id="clearStudyAiApiKeyBtn">Forget Tab Key</button>
+                            </div>
+                            <p class="helper-text" id="studyAiKeyHelp">Use a tab-only key here if the server key is not configured.</p>
+                        </form>
 
                         <textarea
                             id="studyAiQuestion"

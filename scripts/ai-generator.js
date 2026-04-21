@@ -764,7 +764,7 @@ async function refreshAiAvailability() {
 
     setAiAvailability(
         false,
-        "AI is not set up yet. Paste your own OpenAI key above to use it in this tab.",
+        "AI is not set up yet. Paste your own OpenAI key below to use it in this tab.",
         "warning",
         "none"
     );

@@ -1,4 +1,7 @@
 const AI_PROXY_ENDPOINT = "/api/openai";
+const CLIENT_AI_STORAGE_KEY = "quizzy_client_openai_api_key";
+const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
+const AI_CHAT_MODEL = "gpt-4o-mini";
 const MAX_GENERATE_PROMPT_LENGTH = 2500;
 const MAX_STUDY_QUESTION_LENGTH = 600;
 
@@ -10,17 +13,28 @@ const studyHelper = {
 };
 
 const aiService = {
-    checked: false,
+    serverAvailable: false,
     available: false,
-    message: "Checking whether the secure AI connection is ready...",
+    mode: "none",
+    message: "Checking AI setup...",
     tone: "info"
 };
 
 document.addEventListener("DOMContentLoaded", initializeAiGenerator);
 
 async function initializeAiGenerator() {
+    const keyForm = document.getElementById("apiKeyForm");
+    const clearKeyBtn = document.getElementById("clearApiKeyBtn");
     const generateAiBtn = document.getElementById("generateAiBtn");
     const countButtons = Array.from(document.querySelectorAll("[data-count]"));
+
+    if (keyForm) {
+        keyForm.addEventListener("submit", handleApiKeySubmit);
+    }
+
+    if (clearKeyBtn) {
+        clearKeyBtn.addEventListener("click", clearClientApiKey);
+    }
 
     generateAiBtn.addEventListener("click", generateCardsWithAI);
 
@@ -32,7 +46,60 @@ async function initializeAiGenerator() {
     });
 
     initializeStudyHelper();
+    updateApiKeyInputState();
     await refreshAiAvailability();
+}
+
+function handleApiKeySubmit(event) {
+    event.preventDefault();
+    saveClientApiKey();
+}
+
+function saveClientApiKey() {
+    const input = document.getElementById("aiApiKey");
+    const apiKey = input.value.trim();
+
+    if (!apiKey) {
+        setAiMessage("Paste your OpenAI API key first.", "error");
+        input.focus();
+        return;
+    }
+
+    sessionStorage.setItem(CLIENT_AI_STORAGE_KEY, apiKey);
+    input.value = "";
+    setAiMessage("Your key is ready to use in this tab.", "success");
+    updateApiKeyInputState();
+    refreshAiAvailability();
+}
+
+function clearClientApiKey() {
+    sessionStorage.removeItem(CLIENT_AI_STORAGE_KEY);
+    updateApiKeyInputState();
+    setAiMessage("Your key was removed from this tab.", "info");
+    refreshAiAvailability();
+}
+
+function updateApiKeyInputState() {
+    const input = document.getElementById("aiApiKey");
+    const clearButton = document.getElementById("clearApiKeyBtn");
+    const helpText = document.getElementById("aiKeyHelp");
+    const hasClientKey = Boolean(getClientApiKey());
+
+    if (input) {
+        input.placeholder = hasClientKey
+            ? "A tab-only key is active"
+            : "Paste your own OpenAI API key";
+    }
+
+    if (clearButton) {
+        clearButton.disabled = !hasClientKey;
+    }
+
+    if (helpText) {
+        helpText.textContent = hasClientKey
+            ? "Your key is only saved in this tab."
+            : "Optional: use your own key in this tab only. It disappears when you close the tab.";
+    }
 }
 
 async function generateCardsWithAI() {
@@ -195,6 +262,16 @@ async function fetchStudyHelpFromAI(learnerQuestion, context) {
 }
 
 async function requestAi(payload) {
+    const clientApiKey = getClientApiKey();
+
+    if (clientApiKey) {
+        return requestDirectOpenAi(clientApiKey, payload);
+    }
+
+    return requestServerOpenAi(payload);
+}
+
+async function requestServerOpenAi(payload) {
     const response = await fetch(AI_PROXY_ENDPOINT, {
         method: "POST",
         headers: {
@@ -213,13 +290,107 @@ async function requestAi(payload) {
 
     if (!response.ok) {
         const message = data && data.error ? data.error : "The AI request failed.";
+        throw new Error(message);
+    }
+
+    return data && typeof data.content === "string" ? data.content : "";
+}
+
+async function requestDirectOpenAi(apiKey, payload) {
+    const requestBody = buildDirectOpenAiBody(payload);
+    const response = await fetch(OPENAI_API_URL, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`
+        },
+        body: JSON.stringify(requestBody)
+    });
+
+    let data = null;
+
+    try {
+        data = await response.json();
+    } catch (error) {
+        data = null;
+    }
+
+    if (!response.ok) {
+        const message = data && data.error && data.error.message
+            ? data.error.message
+            : "The AI request failed.";
+
+        if (response.status === 401 || response.status === 403) {
+            sessionStorage.removeItem(CLIENT_AI_STORAGE_KEY);
+            updateApiKeyInputState();
+        }
 
         throw new Error(message);
     }
 
-    const content = data && typeof data.content === "string" ? data.content : "";
+    const content = data && data.choices && data.choices[0] && data.choices[0].message
+        ? data.choices[0].message.content
+        : "";
 
     return typeof content === "string" ? content : "";
+}
+
+function buildDirectOpenAiBody(payload) {
+    if (payload.mode === "generate") {
+        return {
+            model: AI_CHAT_MODEL,
+            temperature: 0.6,
+            messages: [
+                {
+                    role: "system",
+                    content: [
+                        "You create accurate study flashcards.",
+                        payload.cardCount === "auto"
+                            ? "Generate the number of flashcards that best fits the topic."
+                            : `Generate exactly ${payload.cardCount} flashcards.`,
+                        "Return only flashcards in this exact format:",
+                        "Q: [Question]",
+                        "A: [Answer]"
+                    ].join("\n")
+                },
+                {
+                    role: "user",
+                    content: payload.prompt
+                }
+            ]
+        };
+    }
+
+    if (payload.mode === "study-help") {
+        return {
+            model: AI_CHAT_MODEL,
+            temperature: 0.4,
+            messages: [
+                {
+                    role: "system",
+                    content: [
+                        "You are a concise study helper inside a flashcard app.",
+                        "Use the provided card question and card answer as the anchor context for every reply.",
+                        "Keep the response practical and easy to study.",
+                        "When useful, include one short example, analogy, or memory trick.",
+                        "Do not ignore or contradict the card answer unless the user explicitly asks you to critique it."
+                    ].join("\n")
+                },
+                {
+                    role: "user",
+                    content: [
+                        `Set title: ${payload.context.setTitle}`,
+                        `Card number: ${payload.context.cardIndex + 1} of ${payload.context.totalCards}`,
+                        `Card question: ${payload.context.question}`,
+                        `Card answer: ${payload.context.answer}`,
+                        `Learner question: ${payload.learnerQuestion}`
+                    ].join("\n")
+                }
+            ]
+        };
+    }
+
+    throw new Error("Unsupported AI request mode.");
 }
 
 function syncStudyHelperWithContext(context) {
@@ -344,16 +515,29 @@ function renderStudyHelperVisibility() {
 }
 
 async function refreshAiAvailability() {
+    updateApiKeyInputState();
+
+    const hasClientKey = Boolean(getClientApiKey());
+
+    if (hasClientKey) {
+        setAiAvailability(
+            true,
+            "You are using your own OpenAI key in this tab only.",
+            "success",
+            "client"
+        );
+        return true;
+    }
+
     if (window.location.protocol === "file:") {
         setAiAvailability(
             false,
-            "AI now runs through a secure Vercel function, so local file mode keeps manual and import features only.",
-            "warning"
+            "To use AI here, paste your own OpenAI key above.",
+            "warning",
+            "none"
         );
         return false;
     }
-
-    setAiAvailability(false, "Checking whether the secure AI connection is ready...", "info");
 
     try {
         const response = await fetch(AI_PROXY_ENDPOINT, {
@@ -367,17 +551,25 @@ async function refreshAiAvailability() {
         }
 
         if (data && data.configured) {
-            setAiAvailability(true, "AI is connected through your secure server setup.", "success");
+            setAiAvailability(
+                true,
+                "AI is ready to use. You can also paste your own OpenAI key if you want.",
+                "success",
+                "server"
+            );
             return true;
         }
-
-        setAiAvailability(false, "Add OPENAI_API_KEY to Vercel to enable AI drafting and helper answers.", "warning");
-        return false;
     } catch (error) {
-        console.error("Unable to verify AI availability.", error);
-        setAiAvailability(false, "AI is unavailable right now. Redeploy with the `/api/openai` function and try again.", "error");
-        return false;
+        console.error("Unable to verify server AI availability.", error);
     }
+
+    setAiAvailability(
+        false,
+        "AI is not set up yet. Paste your own OpenAI key above to use it in this tab.",
+        "warning",
+        "none"
+    );
+    return false;
 }
 
 async function ensureAiServiceAvailable() {
@@ -388,12 +580,13 @@ async function ensureAiServiceAvailable() {
     return refreshAiAvailability();
 }
 
-function setAiAvailability(isAvailable, message, tone) {
+function setAiAvailability(isAvailable, message, tone, mode) {
     const status = document.getElementById("aiKeyStatus");
     const generateButton = document.getElementById("generateAiBtn");
 
-    aiService.checked = true;
+    aiService.serverAvailable = mode === "server";
     aiService.available = isAvailable;
+    aiService.mode = mode;
     aiService.message = message;
     aiService.tone = tone;
 
@@ -456,6 +649,10 @@ function toggleStudyHelperVisibility() {
     if (studyHelper.isOpen && !studyHelper.dom.questionInput.disabled) {
         studyHelper.dom.questionInput.focus();
     }
+}
+
+function getClientApiKey() {
+    return sessionStorage.getItem(CLIENT_AI_STORAGE_KEY) || "";
 }
 
 function setAiMessage(message, tone) {

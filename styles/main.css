@@ -581,6 +581,52 @@ textarea:focus-visible {
     font-weight: 700;
 }
 
+.field-label-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.field-label-row .field-label {
+    margin-bottom: 0;
+    max-width: 24ch;
+}
+
+.doc-help-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(255, 99, 61, 0.16);
+    color: var(--accent-deep);
+    font-size: 0.9rem;
+    font-weight: 700;
+    line-height: 1.25;
+    text-decoration: none;
+}
+
+.doc-help-link:hover {
+    color: var(--accent-strong);
+    background: #fff;
+    border-color: rgba(255, 99, 61, 0.26);
+}
+
+.doc-help-icon {
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    display: inline-grid;
+    place-items: center;
+    background: var(--accent-soft);
+    border: 1px solid rgba(255, 99, 61, 0.18);
+    font-size: 0.85rem;
+    line-height: 1;
+}
+
 .shared-title-field input,
 textarea,
 .ai-input {
@@ -647,6 +693,12 @@ textarea {
 
 .api-key-form {
     margin-top: 20px;
+    padding: 18px;
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.84);
+    border: 1px solid rgba(17, 24, 39, 0.08);
+    display: grid;
+    gap: 12px;
 }
 
 .ai-security-note {
@@ -682,17 +734,37 @@ textarea {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 14px;
-    align-items: center;
+    align-items: stretch;
 }
 
 .field-actions {
     display: flex;
     align-items: center;
+    margin-top: 0;
+}
+
+.ghost-inline-btn {
+    min-height: 40px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: transparent;
+    border: 1px solid var(--line-strong);
+    color: var(--muted);
+    font-weight: 700;
+    transition: transform var(--transition), border-color var(--transition), color var(--transition), background var(--transition);
+}
+
+.ghost-inline-btn:hover {
+    transform: translateY(-1px);
+    border-color: rgba(255, 99, 61, 0.28);
+    color: var(--ink-strong);
+    background: rgba(255, 255, 255, 0.72);
 }
 
 .field-status {
     margin: 10px 0 0;
     font-size: 0.92rem;
+    line-height: 1.5;
 }
 
 .composer-footer {
@@ -1607,6 +1679,11 @@ button:disabled {
 
     .field-inline .secondary-btn {
         margin-top: 14px;
+    }
+
+    .field-label-row {
+        align-items: flex-start;
+        flex-direction: column;
     }
 
     .field-actions {

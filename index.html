@@ -117,9 +117,32 @@ A: 4"></textarea>
                                 </div>
 
                                 <div class="ai-security-note" aria-live="polite">
-                                    <p class="field-label">Secure AI connection</p>
-                                    <p class="field-status" id="aiKeyStatus">Checking whether the server-side AI connection is ready...</p>
+                                    <p class="field-label">AI status</p>
+                                    <p class="field-status" id="aiKeyStatus">Checking AI setup...</p>
                                 </div>
+
+                                <form class="api-key-form" id="apiKeyForm">
+                                    <div class="field-label-row">
+                                        <label class="field-label" for="aiApiKey">Use your own OpenAI API key</label>
+                                        <a
+                                            class="doc-help-link"
+                                            href="https://platform.openai.com/docs/quickstart"
+                                            target="_blank"
+                                            rel="noreferrer noopener"
+                                        >
+                                            <span class="doc-help-icon" aria-hidden="true">?</span>
+                                            <span>How to set up ChatGPT API</span>
+                                        </a>
+                                    </div>
+                                    <div class="field-inline">
+                                        <input type="password" id="aiApiKey" class="ai-input" placeholder="Paste your own OpenAI API key">
+                                        <button class="secondary-btn" type="submit" id="saveApiKeyBtn">Use My Key</button>
+                                    </div>
+                                    <div class="field-actions">
+                                        <button class="ghost-inline-btn" type="button" id="clearApiKeyBtn">Forget Tab Key</button>
+                                    </div>
+                                    <p class="field-status" id="aiKeyHelp">Optional: use your own key in this tab only. It disappears when you close the tab.</p>
+                                </form>
 
                                 <label class="field-label" for="aiPrompt">Study topic</label>
                                 <textarea id="aiPrompt" class="ai-input" rows="7" placeholder="Create flashcards about cellular respiration basics for a high school biology class."></textarea>

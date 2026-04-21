@@ -823,6 +823,7 @@ function clearAllData() {
         onConfirm: () => {
             localStorage.removeItem(STORAGE_KEYS.sets);
             localStorage.removeItem(STORAGE_KEYS.uiPrefs);
+            sessionStorage.removeItem("quizzy_client_openai_api_key");
             state.cardSets = [];
             state.activePanel = "create-panel";
             state.activeCreateTab = "manual";

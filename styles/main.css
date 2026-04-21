@@ -639,6 +639,17 @@ textarea {
     align-items: end;
 }
 
+.api-key-form {
+    margin-top: 20px;
+}
+
+.field-inline {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 14px;
+    align-items: center;
+}
+
 .field-actions {
     display: flex;
     align-items: center;
@@ -1552,6 +1563,14 @@ button:disabled {
     .set-actions {
         margin-top: 14px;
         justify-content: flex-start;
+    }
+
+    .field-inline {
+        display: block;
+    }
+
+    .field-inline .secondary-btn {
+        margin-top: 14px;
     }
 
     .field-actions {

@@ -116,16 +116,14 @@ A: 4"></textarea>
                                     </div>
                                 </div>
 
-                                <div class="field-grid">
-                                    <div>
-                                        <label class="field-label" for="aiApiKey">OpenAI API key</label>
+                                <form class="api-key-form" id="apiKeyForm">
+                                    <label class="field-label" for="aiApiKey">OpenAI API key</label>
+                                    <div class="field-inline">
                                         <input type="password" id="aiApiKey" class="ai-input" placeholder="Paste your API key">
-                                        <p class="field-status" id="aiKeyStatus">No API key saved in this browser yet.</p>
+                                        <button class="secondary-btn" type="submit" id="saveApiKeyBtn">Save Key</button>
                                     </div>
-                                    <div class="field-actions">
-                                        <button class="secondary-btn" type="button" id="saveApiKeyBtn">Save Key</button>
-                                    </div>
-                                </div>
+                                    <p class="field-status" id="aiKeyStatus">No API key saved in this browser yet.</p>
+                                </form>
 
                                 <label class="field-label" for="aiPrompt">Study topic</label>
                                 <textarea id="aiPrompt" class="ai-input" rows="7" placeholder="Create flashcards about cellular respiration basics for a high school biology class."></textarea>

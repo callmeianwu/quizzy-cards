@@ -11,11 +11,11 @@ const studyHelper = {
 document.addEventListener("DOMContentLoaded", initializeAiGenerator);
 
 function initializeAiGenerator() {
-    const saveApiKeyBtn = document.getElementById("saveApiKeyBtn");
+    const apiKeyForm = document.getElementById("apiKeyForm");
     const generateAiBtn = document.getElementById("generateAiBtn");
     const countButtons = Array.from(document.querySelectorAll(".ai-count-btn"));
 
-    saveApiKeyBtn.addEventListener("click", saveApiKey);
+    apiKeyForm.addEventListener("submit", handleApiKeySubmit);
     generateAiBtn.addEventListener("click", generateCardsWithAI);
 
     countButtons.forEach((button) => {
@@ -27,6 +27,11 @@ function initializeAiGenerator() {
 
     initializeStudyHelper();
     updateSavedKeyStatus();
+}
+
+function handleApiKeySubmit(event) {
+    event.preventDefault();
+    saveApiKey();
 }
 
 function initializeStudyHelper() {

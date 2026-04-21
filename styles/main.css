@@ -730,6 +730,35 @@ textarea {
     color: #8f2338;
 }
 
+.ai-security-note {
+    margin-top: 20px;
+    padding: 18px;
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.88);
+    border: 1px solid rgba(17, 24, 39, 0.08);
+}
+
+.ai-security-note .field-label,
+.ai-security-note .field-status {
+    margin: 0;
+}
+
+.ai-security-note .field-status {
+    margin-top: 10px;
+}
+
+.ai-security-note .field-status[data-tone="success"] {
+    color: #166952;
+}
+
+.ai-security-note .field-status[data-tone="warning"] {
+    color: #8a5b00;
+}
+
+.ai-security-note .field-status[data-tone="error"] {
+    color: #8f2338;
+}
+
 .field-inline {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;

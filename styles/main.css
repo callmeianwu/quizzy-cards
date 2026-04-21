@@ -1154,24 +1154,42 @@ button:disabled {
     min-height: calc(100vh - 48px);
     display: flex;
     flex-direction: column;
+    align-items: center;
     gap: 24px;
 }
 
 .study-header {
-    display: grid;
-    grid-template-columns: auto 1fr auto;
+    width: 100%;
+    display: flex;
     gap: 18px;
     align-items: center;
 }
 
+.study-header-leading,
 .study-header-actions {
+    flex: 1 1 0;
+    min-width: 0;
     display: flex;
+    align-items: center;
+}
+
+.study-header-leading {
+    justify-content: flex-start;
+}
+
+.study-header-actions {
     flex-wrap: wrap;
     justify-content: flex-end;
     gap: 12px;
 }
 
 .study-header-copy {
+    flex: 0 1 auto;
+    width: min(520px, 100%);
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     text-align: center;
 }
 
@@ -1205,6 +1223,45 @@ button:disabled {
     margin-right: 4px;
 }
 
+.study-streak {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: rgba(255, 255, 255, 0.68);
+    font-size: 0.88rem;
+    font-weight: 600;
+    line-height: 1;
+    flex: 0 0 auto;
+}
+
+.study-streak-icon {
+    font-size: 0.95rem;
+    opacity: 0.9;
+}
+
+.study-streak-value {
+    display: inline-block;
+    margin: 0;
+    font-size: 0.88rem;
+    font-weight: 600;
+}
+
+.study-streak-value.is-pulsing {
+    animation: streak-pop 320ms ease;
+}
+
+@keyframes streak-pop {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.08);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
 .study-progress-bar {
     width: min(520px, 100%);
     height: 10px;
@@ -1225,12 +1282,14 @@ button:disabled {
 
 .study-main {
     flex: 1;
+    width: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
 .study-section-manager {
+    width: 100%;
     padding: 24px;
     border-radius: 24px;
     background: rgba(255, 255, 255, 0.08);
@@ -1341,19 +1400,26 @@ button:disabled {
 
 .study-stage {
     width: min(860px, 100%);
+    margin: 0 auto;
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     gap: 20px;
 }
 
 .flashcard {
     width: min(820px, 100%);
+    margin: 0 auto;
     min-height: 500px;
     padding: 0;
     background: none;
     border: 0;
     perspective: 1600px;
+}
+
+.flashcard.study-locked {
+    cursor: default;
 }
 
 .flashcard-inner {
@@ -1424,6 +1490,175 @@ button:disabled {
     color: rgba(255, 255, 255, 0.72);
 }
 
+.study-mode-toggle {
+    width: min(680px, 100%);
+    margin: 0 auto;
+    align-self: center;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    padding: 8px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 99, 61, 0.16);
+}
+
+.study-mode-btn {
+    min-height: 48px;
+    padding: 12px 16px;
+    border-radius: 14px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.76);
+    border: 1px solid transparent;
+    font-weight: 700;
+    transition: transform var(--transition), background var(--transition), color var(--transition), border-color var(--transition), box-shadow var(--transition);
+}
+
+.study-mode-btn:hover {
+    transform: translateY(-1px);
+    color: #fff;
+}
+
+.study-mode-btn.active {
+    background: linear-gradient(135deg, rgba(255, 99, 61, 0.92), rgba(255, 160, 82, 0.92));
+    border-color: rgba(255, 218, 184, 0.22);
+    color: #fff;
+    box-shadow: 0 16px 26px rgba(255, 99, 61, 0.24);
+}
+
+.study-interaction,
+.adaptive-help-panel {
+    width: min(680px, 100%);
+    margin: 0 auto;
+    padding: 20px 22px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 99, 61, 0.16);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.16);
+}
+
+.study-answer-panel,
+.adaptive-help-grid {
+    display: grid;
+    gap: 14px;
+}
+
+.study-answer-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+}
+
+.study-answer-input {
+    width: 100%;
+    min-height: 48px;
+    padding: 13px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 99, 61, 0.2);
+    background: rgba(8, 15, 34, 0.36);
+    color: #fff;
+}
+
+.study-answer-input::placeholder {
+    color: rgba(255, 255, 255, 0.45);
+}
+
+.study-answer-feedback,
+.study-mc-status,
+.adaptive-help-status {
+    margin: 0;
+    color: rgba(255, 255, 255, 0.76);
+}
+
+.study-answer-feedback[data-tone="success"] {
+    color: #aef0d5;
+}
+
+.study-answer-feedback[data-tone="warning"] {
+    color: #ffd994;
+}
+
+.study-answer-feedback[data-tone="error"] {
+    color: #ffb5c2;
+}
+
+.study-mc-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.study-mc-option {
+    min-height: 72px;
+    padding: 14px 16px;
+    border-radius: 16px;
+    text-align: left;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #fff;
+    font-weight: 600;
+    transition: transform var(--transition), border-color var(--transition), background var(--transition), box-shadow var(--transition);
+}
+
+.study-mc-option:hover {
+    transform: translateY(-1px);
+    border-color: rgba(255, 209, 170, 0.32);
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.study-mc-option.correct {
+    background: rgba(31, 159, 120, 0.22);
+    border-color: rgba(174, 240, 213, 0.38);
+}
+
+.study-mc-option.incorrect {
+    background: rgba(221, 78, 103, 0.2);
+    border-color: rgba(255, 181, 194, 0.34);
+}
+
+.study-mc-option.loading {
+    justify-content: center;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.72);
+}
+
+.adaptive-help-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+}
+
+.adaptive-help-header h3 {
+    margin: 0;
+    font-family: "Bricolage Grotesque", sans-serif;
+    letter-spacing: -0.03em;
+}
+
+.adaptive-help-grid {
+    margin-top: 16px;
+}
+
+.adaptive-help-item {
+    padding: 16px 18px;
+    border-radius: 16px;
+    background: rgba(8, 15, 34, 0.32);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.adaptive-help-item h4,
+.adaptive-help-item p {
+    margin: 0;
+}
+
+.adaptive-help-item p {
+    margin-top: 8px;
+    color: rgba(255, 255, 255, 0.82);
+    line-height: 1.6;
+    white-space: pre-wrap;
+}
+
 .study-actions,
 .summary-actions,
 .dialog-actions {
@@ -1475,6 +1710,7 @@ button:disabled {
 
 .study-ai-helper {
     width: min(680px, 100%);
+    margin: 0 auto;
     padding: 22px;
     border-radius: 20px;
     background: rgba(255, 255, 255, 0.08);
@@ -1536,6 +1772,24 @@ button:disabled {
 
 .study-ai-setup-toggle:hover {
     color: #fff0e6;
+}
+
+.adaptive-help-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 10px;
+    padding: 10px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 214, 187, 0.28);
+    background: rgba(255, 214, 187, 0.08);
+    transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease;
+}
+
+.adaptive-help-toggle[aria-pressed="true"] {
+    background: rgba(255, 214, 187, 0.16);
+    border-color: rgba(255, 214, 187, 0.48);
+    color: #fff8f1;
 }
 
 .study-ai-setup {
@@ -1611,6 +1865,7 @@ button:disabled {
 
 .study-summary {
     width: min(640px, 100%);
+    margin: 0 auto;
     padding: 28px;
     border-radius: 22px;
     background: rgba(255, 255, 255, 0.08);
@@ -1707,16 +1962,17 @@ button:disabled {
     }
 
     .study-header {
-        grid-template-columns: 1fr;
+        flex-direction: column;
     }
 
     .study-header-copy {
         order: -1;
+        width: 100%;
     }
 
-    .study-header .ghost-btn,
+    .study-header-leading,
     .study-header-actions {
-        justify-self: center;
+        justify-content: center;
     }
 }
 
@@ -1822,6 +2078,7 @@ button:disabled {
     .dialog-actions,
     .study-ai-footer,
     .study-ai-header,
+    .adaptive-help-header,
     .study-section-manager-header,
     .study-section-controls,
     .study-section-list-item,
@@ -1846,5 +2103,14 @@ button:disabled {
 
     .study-section-item-actions {
         width: 100%;
+    }
+
+    .study-mode-toggle,
+    .study-mc-options {
+        grid-template-columns: 1fr;
+    }
+
+    .study-answer-row {
+        grid-template-columns: 1fr;
     }
 }

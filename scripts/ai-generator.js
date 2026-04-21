@@ -4,6 +4,7 @@ const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 const AI_CHAT_MODEL = "gpt-4o-mini";
 const MAX_GENERATE_PROMPT_LENGTH = 2500;
 const MAX_STUDY_QUESTION_LENGTH = 600;
+const MAX_CARD_FIELD_LENGTH = 2000;
 
 const studyHelper = {
     contextKey: "",
@@ -47,8 +48,17 @@ async function initializeAiGenerator() {
     });
 
     initializeStudyHelper();
+    exposeAiBridge();
     updateApiKeyInputState();
     await refreshAiAvailability();
+}
+
+function exposeAiBridge() {
+    window.QuizzyAI = {
+        getDistractorsForCard,
+        getAdaptiveHelpForCard,
+        isAvailable: () => aiService.available
+    };
 }
 
 function handleApiKeySubmit(event) {
@@ -98,14 +108,14 @@ function updateApiKeyInputState() {
             input: document.getElementById("aiApiKey"),
             clearButton: document.getElementById("clearApiKeyBtn"),
             helpText: document.getElementById("aiKeyHelp"),
-            inactiveHelp: "Optional: use your own key in this tab only. It disappears when you close the tab.",
+            inactiveHelp: "This will use your own key in this tab only. It disappears when you close the tab.",
             activeHelp: "Your key is only saved in this tab."
         },
         {
             input: studyHelper.dom.apiKeyInput,
             clearButton: studyHelper.dom.clearApiKeyButton,
             helpText: studyHelper.dom.apiKeyHelp,
-            inactiveHelp: "Use a tab-only key here if the server key is not configured.",
+            inactiveHelp: "This will use your own key in this tab only. It disappears when you close the tab.",
             activeHelp: "Your key is only saved in this tab."
         }
     ];
@@ -288,6 +298,32 @@ async function fetchStudyHelpFromAI(learnerQuestion, context) {
     return content.trim();
 }
 
+async function getDistractorsForCard(card) {
+    if (!(await ensureAiServiceAvailable())) {
+        return [];
+    }
+
+    const content = await requestAi({
+        mode: "distractors",
+        card
+    });
+
+    return parseDistractorsResponse(content, card.answer);
+}
+
+async function getAdaptiveHelpForCard(card) {
+    if (!(await ensureAiServiceAvailable())) {
+        return null;
+    }
+
+    const content = await requestAi({
+        mode: "adaptive-help",
+        card
+    });
+
+    return parseAdaptiveHelpResponse(content);
+}
+
 async function requestAi(payload) {
     const clientApiKey = getClientApiKey();
 
@@ -423,7 +459,137 @@ function buildDirectOpenAiBody(payload) {
         };
     }
 
+    if (payload.mode === "distractors") {
+        return {
+            model: AI_CHAT_MODEL,
+            temperature: 0.5,
+            messages: [
+                {
+                    role: "system",
+                    content: [
+                        "Generate 3 incorrect but plausible answers for this flashcard.",
+                        "They must be the same type/category as the correct answer and commonly confused with it.",
+                        "Do not include jokes or unrelated items.",
+                        "Return only a JSON array of three short strings.",
+                        "Do not include the correct answer.",
+                        "Keep distractors concise and classroom-appropriate."
+                    ].join("\n")
+                },
+                {
+                    role: "user",
+                    content: [
+                        `Question: ${readCardField(payload.card && payload.card.question)}`,
+                        `Correct answer: ${readCardField(payload.card && payload.card.answer)}`
+                    ].join("\n")
+                }
+            ]
+        };
+    }
+
+    if (payload.mode === "adaptive-help") {
+        return {
+            model: AI_CHAT_MODEL,
+            temperature: 0.5,
+            messages: [
+                {
+                    role: "system",
+                    content: [
+                        "You create concise support for a student who is struggling with a flashcard.",
+                        "Return only valid JSON with these string fields: explanation, mnemonic, example, alternateQuestion.",
+                        "Keep each field practical and brief."
+                    ].join("\n")
+                },
+                {
+                    role: "user",
+                    content: [
+                        `Question: ${readCardField(payload.card && payload.card.question)}`,
+                        `Correct answer: ${readCardField(payload.card && payload.card.answer)}`
+                    ].join("\n")
+                }
+            ]
+        };
+    }
+
     throw new Error("Unsupported AI request mode.");
+}
+
+function readCardField(value) {
+    return String(value || "").trim().slice(0, MAX_CARD_FIELD_LENGTH);
+}
+
+function parseDistractorsResponse(content, correctAnswer = "") {
+    const parsed = parseJsonResponse(content);
+
+    if (!Array.isArray(parsed)) {
+        return [];
+    }
+
+    const normalizedCorrect = normalizeChoice(correctAnswer);
+    const unique = [];
+    const seen = new Set();
+
+    parsed.forEach((value) => {
+        if (typeof value !== "string") {
+            return;
+        }
+
+        const trimmed = value.trim();
+        const normalized = normalizeChoice(trimmed);
+
+        if (!trimmed || normalized === normalizedCorrect || seen.has(normalized)) {
+            return;
+        }
+
+        seen.add(normalized);
+        unique.push(trimmed);
+    });
+
+    return unique.slice(0, 3);
+}
+
+function parseAdaptiveHelpResponse(content) {
+    const parsed = parseJsonResponse(content);
+
+    if (!parsed || typeof parsed !== "object") {
+        return null;
+    }
+
+    const adaptiveHelp = {
+        explanation: readCardField(parsed.explanation),
+        mnemonic: readCardField(parsed.mnemonic),
+        example: readCardField(parsed.example),
+        alternateQuestion: readCardField(parsed.alternateQuestion)
+    };
+
+    if (!adaptiveHelp.explanation && !adaptiveHelp.mnemonic && !adaptiveHelp.example && !adaptiveHelp.alternateQuestion) {
+        return null;
+    }
+
+    return adaptiveHelp;
+}
+
+function parseJsonResponse(content) {
+    const normalized = String(content || "").trim();
+
+    if (!normalized) {
+        return null;
+    }
+
+    const fenced = normalized.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    const candidate = fenced ? fenced[1].trim() : normalized;
+
+    try {
+        return JSON.parse(candidate);
+    } catch (error) {
+        return null;
+    }
+}
+
+function normalizeChoice(value) {
+    return String(value || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
 }
 
 function syncStudyHelperWithContext(context) {
@@ -634,6 +800,10 @@ function setAiAvailability(isAvailable, message, tone, mode) {
 
     updateStudyHelperSetupVisibility();
     syncStudyHelperWithContext(getCurrentStudyContext());
+
+    if (window.QuizzyApp && typeof window.QuizzyApp.handleStudyAiAvailabilityChange === "function") {
+        window.QuizzyApp.handleStudyAiAvailabilityChange();
+    }
 }
 
 function initializeStudyHelper() {
@@ -744,7 +914,7 @@ function getStudyHelperUnavailableMessage() {
         return "AI is ready to use for this card.";
     }
 
-    return "AI is not set up yet. Paste your OpenAI key into the setup box below, or configure the server key.";
+    return "AI is not set up yet. Paste your OpenAI key into the setup box below.";
 }
 
 function updateStudyHelperSetupVisibility() {

@@ -6,16 +6,22 @@ class CardSet {
         this.lastStudied = null;
         this.studySections = [];
         this.studyPrefs = createDefaultStudyPrefs();
+        this.studyStats = createDefaultStudyStats();
     }
 }
 
 const EXPORT_VERSION = "1.1";
 const DEFAULT_CHUNK_SIZE = 5;
 const SECTION_SIZE_OPTIONS = [5, 10];
+const STUDY_MODE_OPTIONS = ["flip", "type", "multiple-choice"];
+const AI_CACHE_VERSION = 2;
+const HARD_REINSERT_OFFSETS = [2, 3];
+const MEDIUM_REINSERT_OFFSETS = [5, 6, 7, 8];
 const MAX_SET_TITLE_LENGTH = 120;
 const MAX_CARDS_PER_SET = 200;
 const MAX_CARD_TEXT_LENGTH = 2000;
 const MAX_AI_HISTORY_ENTRIES = 10;
+const TYPE_SIMILARITY_THRESHOLD = 0.72;
 const IMPORT_LIMITS = {
     maxFileBytes: 1000000,
     maxSets: 50,
@@ -39,6 +45,23 @@ const state = {
     studySectionSizeMode: String(DEFAULT_CHUNK_SIZE),
     studyQueue: [],
     studyScope: createEmptyStudyScope(),
+    resumeStudyScope: createEmptyStudyScope(),
+    studyMode: "flip",
+    roundStep: 0,
+    roundPresentationCount: 0,
+    activeCardId: "",
+    currentStreak: 0,
+    bestStreak: 0,
+    streakPulseTimeoutId: 0,
+    sessionCompletedCardIds: [],
+    troublePile: [],
+    masteredPile: [],
+    adaptiveHelpEnabled: false,
+    currentCardAttempt: createEmptyCardAttemptState(),
+    typeAnswerValue: "",
+    typeAnswerResult: null,
+    multipleChoiceState: createEmptyMultipleChoiceState(),
+    adaptiveHelpState: createEmptyAdaptiveHelpState(),
     confirmAction: null
 };
 
@@ -89,8 +112,25 @@ function cacheDom() {
     dom.studyProgressFill = document.getElementById("studyProgressFill");
     dom.studySetTitle = document.getElementById("studySetTitle");
     dom.studyScopeLabel = document.getElementById("studyScopeLabel");
+    dom.studyStreak = document.getElementById("studyStreak");
+    dom.currentStreakCount = document.getElementById("currentStreakCount");
+    dom.studyModeButtons = Array.from(document.querySelectorAll("[data-study-mode]"));
     dom.studyHint = document.getElementById("studyHint");
+    dom.studyInteraction = document.getElementById("studyInteraction");
+    dom.typeAnswerPanel = document.getElementById("typeAnswerPanel");
+    dom.typeAnswerInput = document.getElementById("typeAnswerInput");
+    dom.submitTypeAnswerBtn = document.getElementById("submitTypeAnswerBtn");
+    dom.typeAnswerFeedback = document.getElementById("typeAnswerFeedback");
+    dom.multipleChoicePanel = document.getElementById("multipleChoicePanel");
+    dom.multipleChoiceStatus = document.getElementById("multipleChoiceStatus");
+    dom.multipleChoiceOptions = document.getElementById("multipleChoiceOptions");
+    dom.multipleChoiceFeedback = document.getElementById("multipleChoiceFeedback");
     dom.studyActions = document.getElementById("studyActions");
+    dom.adaptiveHelpPanel = document.getElementById("adaptiveHelpPanel");
+    dom.adaptiveHelpStatus = document.getElementById("adaptiveHelpStatus");
+    dom.adaptiveHelpToggleBtn = document.getElementById("adaptiveHelpToggleBtn");
+    dom.adaptiveHelpContent = document.getElementById("adaptiveHelpContent");
+    dom.reviewTroubleBtn = document.getElementById("reviewTroubleBtn");
     dom.ratingButtons = Array.from(document.querySelectorAll("[data-rating]"));
     dom.exitStudyBtn = document.getElementById("exitStudyBtn");
     dom.restartStudyBtn = document.getElementById("restartStudyBtn");
@@ -138,12 +178,21 @@ function bindEvents() {
     dom.setList.addEventListener("click", handleSetListClick);
     dom.resumeRecentBtn.addEventListener("click", handleResumeRecent);
     dom.flashcard.addEventListener("click", flipFlashcard);
+    dom.studyModeButtons.forEach((button) => {
+        button.addEventListener("click", () => changeStudyMode(button.dataset.studyMode));
+    });
+    dom.submitTypeAnswerBtn.addEventListener("click", submitTypeAnswer);
+    dom.typeAnswerInput.addEventListener("keydown", handleTypeAnswerKeydown);
     dom.ratingButtons.forEach((button) => {
         button.addEventListener("click", () => rateCard(Number(button.dataset.rating)));
     });
     dom.exitStudyBtn.addEventListener("click", () => exitStudyMode("library-panel"));
     dom.restartStudyBtn.addEventListener("click", restartSession);
-    dom.studyAgainBtn.addEventListener("click", restartSession);
+    dom.studyAgainBtn.addEventListener("click", studyAgain);
+    dom.reviewTroubleBtn.addEventListener("click", startTroubleReview);
+    if (dom.adaptiveHelpToggleBtn) {
+        dom.adaptiveHelpToggleBtn.addEventListener("click", toggleAdaptiveHelp);
+    }
     dom.returnToLibraryBtn.addEventListener("click", () => exitStudyMode("library-panel"));
     dom.toggleStudySectionsBtn.addEventListener("click", toggleStudySectionManager);
     dom.studyWholeSetBtn.addEventListener("click", () => activateStudyScope({ type: "full", sectionId: null }));
@@ -170,7 +219,8 @@ function exposeAppBridge() {
         setInlineMessage,
         clearInlineMessage,
         getStudyCardContext,
-        recordStudyAiExchange
+        recordStudyAiExchange,
+        handleStudyAiAvailabilityChange
     };
 }
 
@@ -182,12 +232,102 @@ function createDefaultStudyPrefs() {
     };
 }
 
+function createDefaultStudyStats() {
+    return {
+        bestStreak: 0
+    };
+}
+
 function createEmptyStudyScope() {
     return {
         type: "full",
         sectionId: null,
-        cardIndexes: []
+        cardIndexes: [],
+        label: "Whole set",
+        includeAll: false
     };
+}
+
+function cloneStudyScope(scope) {
+    if (!scope || typeof scope !== "object") {
+        return createEmptyStudyScope();
+    }
+
+    return {
+        type: scope.type || "full",
+        sectionId: scope.sectionId || null,
+        cardIndexes: Array.isArray(scope.cardIndexes) ? scope.cardIndexes.slice() : [],
+        label: typeof scope.label === "string" ? scope.label : "Whole set",
+        includeAll: Boolean(scope.includeAll)
+    };
+}
+
+function createEmptyMultipleChoiceState() {
+    return {
+        status: "idle",
+        options: [],
+        feedback: "",
+        selectedOption: "",
+        isCorrect: null
+    };
+}
+
+function createEmptyAdaptiveHelpState() {
+    return {
+        status: "idle",
+        cardId: "",
+        message: ""
+    };
+}
+
+function createEmptyCardAttemptState(cardId = "") {
+    return {
+        cardId,
+        isSubmitted: false,
+        mode: "",
+        isCorrect: null
+    };
+}
+
+function resetCurrentCardAttempt(cardId = "") {
+    state.currentCardAttempt = createEmptyCardAttemptState(cardId);
+}
+
+function hasSubmittedAttemptForCard(card) {
+    return Boolean(card
+        && state.currentCardAttempt
+        && state.currentCardAttempt.cardId === card.id
+        && state.currentCardAttempt.isSubmitted);
+}
+
+function markCardAttemptSubmitted(card, mode, isCorrect = null) {
+    if (!card) {
+        return;
+    }
+
+    state.currentCardAttempt = {
+        cardId: card.id,
+        isSubmitted: true,
+        mode,
+        isCorrect: typeof isCorrect === "boolean" ? isCorrect : null
+    };
+}
+
+function clearTransientStudyModeState() {
+    if (state.typeAnswerResult) {
+        state.typeAnswerResult = {
+            ...state.typeAnswerResult,
+            feedback: ""
+        };
+    }
+
+    if (state.multipleChoiceState.status === "answered") {
+        state.multipleChoiceState = {
+            ...state.multipleChoiceState,
+            feedback: "",
+            selectedOption: ""
+        };
+    }
 }
 
 function restoreUiPrefs() {
@@ -240,16 +380,29 @@ function hydrateCardSet(rawSet) {
     set.lastStudied = getValidDateOrNull(rawSet.lastStudied);
     set.studySections = sanitizeStudySections(rawSet.studySections, cards.length);
     set.studyPrefs = sanitizeStudyPrefs(rawSet.studyPrefs, set.studySections);
+    set.studyStats = sanitizeStudyStats(rawSet.studyStats);
     return set;
 }
 
 function hydrateCard(rawCard) {
     const card = new Card(rawCard.question || "", rawCard.answer || "");
+    card.id = typeof rawCard.id === "string" && rawCard.id.trim() ? rawCard.id.trim() : card.id;
     card.level = Math.max(0, Number(rawCard.level) || 0);
     card.attempts = Math.max(0, Number(rawCard.attempts) || 0);
     card.mastered = Boolean(rawCard.mastered);
     card.nextReview = getValidDate(rawCard.nextReview, new Date());
     card.aiHelpHistory = sanitizeAiHelpHistory(rawCard.aiHelpHistory);
+    card.difficultyScore = Math.max(0, Number(rawCard.difficultyScore) || 0);
+    card.timesSeen = Math.max(0, Number(rawCard.timesSeen) || 0);
+    card.lastSeenIndex = Number.isInteger(rawCard.lastSeenIndex) ? rawCard.lastSeenIndex : -1;
+    card.hardCount = Math.max(0, Number(rawCard.hardCount) || 0);
+    card.easyCount = Math.max(0, Number(rawCard.easyCount) || 0);
+    card.cachedDistractors = sanitizeDistractorList(rawCard.cachedDistractors);
+    card.cachedCloze = typeof rawCard.cachedCloze === "string" ? rawCard.cachedCloze.trim() : "";
+    card.aiSupport = sanitizeAdaptiveHelp(rawCard.aiSupport);
+    card.aiCache = sanitizeAiCache(rawCard.aiCache, card);
+    syncLegacyCardCacheFields(card);
+    invalidateCardCacheIfNeeded(card);
     return card;
 }
 
@@ -311,6 +464,143 @@ function sanitizeStudyPrefs(rawPrefs, studySections) {
     }
 
     return prefs;
+}
+
+function sanitizeStudyStats(rawStats) {
+    const stats = createDefaultStudyStats();
+    stats.bestStreak = Math.max(0, Number(rawStats && rawStats.bestStreak) || 0);
+    return stats;
+}
+
+function createEmptyAiCache(contentHash) {
+    return {
+        version: AI_CACHE_VERSION,
+        contentHash,
+        distractors: [],
+        cloze: "",
+        adaptiveHelp: null
+    };
+}
+
+function createCardContentHash(card) {
+    return [card && card.question, card && card.answer]
+        .map((value) => String(value || "")
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, " "))
+        .join("::");
+}
+
+function sanitizeDistractorList(values, correctAnswer = "") {
+    const correctAnswerText = normalizeAnswerText(correctAnswer);
+    const unique = [];
+    const seen = new Set();
+
+    if (!Array.isArray(values)) {
+        return unique;
+    }
+
+    values.forEach((value) => {
+        if (typeof value !== "string") {
+            return;
+        }
+
+        const trimmed = value.trim().slice(0, MAX_CARD_TEXT_LENGTH);
+        const normalized = normalizeAnswerText(trimmed);
+
+        if (!trimmed || !normalized || normalized === correctAnswerText || seen.has(normalized)) {
+            return;
+        }
+
+        seen.add(normalized);
+        unique.push(trimmed);
+    });
+
+    return unique.slice(0, 6);
+}
+
+function sanitizeAdaptiveHelp(rawSupport) {
+    if (!rawSupport || typeof rawSupport !== "object") {
+        return null;
+    }
+
+    const support = {
+        explanation: typeof rawSupport.explanation === "string" ? rawSupport.explanation.trim().slice(0, MAX_CARD_TEXT_LENGTH) : "",
+        mnemonic: typeof rawSupport.mnemonic === "string" ? rawSupport.mnemonic.trim().slice(0, MAX_CARD_TEXT_LENGTH) : "",
+        example: typeof rawSupport.example === "string" ? rawSupport.example.trim().slice(0, MAX_CARD_TEXT_LENGTH) : "",
+        alternateQuestion: typeof rawSupport.alternateQuestion === "string" ? rawSupport.alternateQuestion.trim().slice(0, MAX_CARD_TEXT_LENGTH) : "",
+        generatedAt: getValidTimestamp(rawSupport.generatedAt)
+    };
+
+    if (!support.explanation && !support.mnemonic && !support.example && !support.alternateQuestion) {
+        return null;
+    }
+
+    return support;
+}
+
+function sanitizeAiCache(rawAiCache, card) {
+    const contentHash = createCardContentHash(card);
+    const cache = createEmptyAiCache(contentHash);
+    const source = rawAiCache && typeof rawAiCache === "object" ? rawAiCache : {};
+
+    cache.version = Math.max(1, Number(source.version) || AI_CACHE_VERSION);
+    cache.contentHash = typeof source.contentHash === "string" && source.contentHash.trim()
+        ? source.contentHash.trim()
+        : contentHash;
+    cache.distractors = sanitizeDistractorList(source.distractors || card.cachedDistractors, card.answer);
+    cache.cloze = typeof source.cloze === "string"
+        ? source.cloze.trim().slice(0, MAX_CARD_TEXT_LENGTH)
+        : card.cachedCloze;
+    cache.adaptiveHelp = sanitizeAdaptiveHelp(source.adaptiveHelp || card.aiSupport);
+    return cache;
+}
+
+function syncLegacyCardCacheFields(card) {
+    const contentHash = createCardContentHash(card);
+
+    if (!card.aiCache || typeof card.aiCache !== "object") {
+        card.aiCache = createEmptyAiCache(contentHash);
+    }
+
+    card.contentHash = contentHash;
+    card.aiCache.version = AI_CACHE_VERSION;
+    card.aiCache.contentHash = contentHash;
+    card.cachedDistractors = sanitizeDistractorList(card.aiCache.distractors, card.answer);
+    card.cachedCloze = typeof card.aiCache.cloze === "string" ? card.aiCache.cloze : "";
+    card.aiSupport = sanitizeAdaptiveHelp(card.aiCache.adaptiveHelp);
+}
+
+function invalidateCardCacheIfNeeded(card) {
+    const contentHash = createCardContentHash(card);
+
+    if (!card.aiCache || card.aiCache.contentHash !== contentHash) {
+        card.aiCache = createEmptyAiCache(contentHash);
+    }
+
+    syncLegacyCardCacheFields(card);
+}
+
+function buildCachedDistractorPayload(card, distractors) {
+    card.aiCache.distractors = sanitizeDistractorList(distractors, card.answer);
+    syncLegacyCardCacheFields(card);
+}
+
+function buildCachedAdaptiveHelpPayload(card, adaptiveHelp) {
+    card.aiCache.adaptiveHelp = sanitizeAdaptiveHelp(adaptiveHelp);
+    syncLegacyCardCacheFields(card);
+}
+
+function addUniqueValue(collection, value) {
+    if (!collection.includes(value)) {
+        collection.push(value);
+    }
+}
+
+function isCurrentStudyCard(cardId) {
+    const set = getCurrentSet();
+    const card = set ? set.cards[state.currentCardIndex] : null;
+    return Boolean(card && card.id === cardId);
 }
 
 function saveSets() {
@@ -781,6 +1071,7 @@ function handleImportedSets(importedSets) {
         newSet.lastStudied = getValidDateOrNull(importedSet.lastStudied);
         newSet.studySections = sanitizeStudySections(importedSet.studySections, cards.length);
         newSet.studyPrefs = sanitizeStudyPrefs(importedSet.studyPrefs, newSet.studySections);
+        newSet.studyStats = sanitizeStudyStats(importedSet.studyStats);
 
         state.cardSets.push(newSet);
     });
@@ -835,6 +1126,9 @@ function clearAllData() {
             state.studySectionSizeMode = String(DEFAULT_CHUNK_SIZE);
             state.studyQueue = [];
             state.studyScope = createEmptyStudyScope();
+            state.studyMode = "flip";
+            state.bestStreak = 0;
+            resetStudyRoundState();
             dom.appShell.hidden = false;
             dom.studyView.hidden = true;
             dom.setTitle.value = "";
@@ -873,6 +1167,7 @@ function approveConfirmDialog() {
 }
 
 function startStudySet(index, requestedScope = { type: "full", sectionId: null }) {
+    state.studyMode = "flip";
     initializeStudySession(index, requestedScope, {
         enterMode: true,
         preserveManagerOpen: false
@@ -902,13 +1197,21 @@ function initializeStudySession(index, requestedScope, options = {}) {
     const nowIso = new Date().toISOString();
 
     state.currentSetIndex = index;
+
+    if (resolvedScope.type !== "custom") {
+        state.resumeStudyScope = cloneStudyScope(resolvedScope);
+    }
+
     state.studyScope = resolvedScope;
-    state.studyQueue = buildStudyQueue(set, resolvedScope.cardIndexes);
+    state.studyQueue = buildStudyQueue(set, resolvedScope.cardIndexes, resolvedScope);
     state.currentCardIndex = state.studyQueue[0] ?? -1;
     state.studyComplete = state.studyQueue.length === 0;
     state.studyCompletionRecorded = false;
     state.studyManagerOpen = Boolean(options.preserveManagerOpen) ? state.studyManagerOpen : false;
+    state.bestStreak = Math.max(0, Number(set.studyStats && set.studyStats.bestStreak) || 0);
     syncStudySectionSizeMode(set);
+    resetStudyRoundState();
+    syncCardPileMembership(set);
 
     set.lastStudied = new Date(nowIso);
 
@@ -920,7 +1223,7 @@ function initializeStudySession(index, requestedScope, options = {}) {
             set.studyPrefs.lastScopeType = "section";
             set.studyPrefs.lastSectionId = section.id;
         }
-    } else {
+    } else if (resolvedScope.type !== "custom") {
         set.studyPrefs.lastScopeType = "full";
         set.studyPrefs.lastSectionId = null;
     }
@@ -944,6 +1247,22 @@ function resolveStudyScope(set, requestedScope) {
         return createEmptyStudyScope();
     }
 
+    if (requestedScope && requestedScope.type === "custom" && Array.isArray(requestedScope.cardIndexes)) {
+        const cardIndexes = Array.from(new Set(requestedScope.cardIndexes
+            .map((value) => Number(value))
+            .filter((value) => Number.isInteger(value) && value >= 0 && value < set.cards.length)));
+
+        return {
+            type: "custom",
+            sectionId: null,
+            cardIndexes,
+            label: typeof requestedScope.label === "string" && requestedScope.label.trim()
+                ? requestedScope.label.trim()
+                : "Custom round",
+            includeAll: requestedScope.includeAll !== false
+        };
+    }
+
     if (requestedScope && requestedScope.type === "section" && requestedScope.sectionId) {
         const section = findStudySectionById(set, requestedScope.sectionId);
 
@@ -951,7 +1270,9 @@ function resolveStudyScope(set, requestedScope) {
             return {
                 type: "section",
                 sectionId: section.id,
-                cardIndexes: section.cardIndexes.slice()
+                cardIndexes: section.cardIndexes.slice(),
+                label: `Section ${section.label}`,
+                includeAll: false
             };
         }
     }
@@ -959,15 +1280,17 @@ function resolveStudyScope(set, requestedScope) {
     return {
         type: "full",
         sectionId: null,
-        cardIndexes: set.cards.map((_, cardIndex) => cardIndex)
+        cardIndexes: set.cards.map((_, cardIndex) => cardIndex),
+        label: "Whole set",
+        includeAll: false
     };
 }
 
-function buildStudyQueue(set, cardIndexes) {
+function buildStudyQueue(set, cardIndexes, scope = createEmptyStudyScope()) {
     const now = Date.now();
     let queuedIndexes = cardIndexes.filter((cardIndex) => {
         const card = set.cards[cardIndex];
-        return card && shouldIncludeCardInRound(card, now);
+        return card && (scope.includeAll || shouldIncludeCardInRound(card, now));
     });
 
     if (queuedIndexes.length === 0) {
@@ -999,6 +1322,10 @@ function compareStudyPriority(leftCard, rightCard, leftIndex, rightIndex, now) {
 
     if (leftCard.level !== rightCard.level) {
         return leftCard.level - rightCard.level;
+    }
+
+    if (leftCard.difficultyScore !== rightCard.difficultyScore) {
+        return rightCard.difficultyScore - leftCard.difficultyScore;
     }
 
     if (leftCard.attempts !== rightCard.attempts) {
@@ -1035,6 +1362,9 @@ function exitStudyMode(returnPanel = "library-panel") {
     state.studyManagerOpen = false;
     state.studyQueue = [];
     state.studyScope = createEmptyStudyScope();
+    state.resumeStudyScope = createEmptyStudyScope();
+    state.bestStreak = 0;
+    resetStudyRoundState();
     switchPanel(returnPanel);
     renderStudyState();
 }
@@ -1052,15 +1382,40 @@ function restartSession() {
     showToast("Round restarted without clearing your saved progress.", "info");
 }
 
+function studyAgain() {
+    if (state.currentSetIndex < 0) {
+        return;
+    }
+
+    const targetScope = isTroubleReviewScope()
+        ? (state.resumeStudyScope.cardIndexes.length > 0 ? state.resumeStudyScope : createEmptyStudyScope())
+        : state.studyScope;
+
+    initializeStudySession(state.currentSetIndex, targetScope, {
+        enterMode: false,
+        preserveManagerOpen: true
+    });
+
+    showToast("Round restarted without clearing your saved progress.", "info");
+}
+
+function isTroubleReviewScope(scope = state.studyScope) {
+    return Boolean(scope && scope.type === "custom" && scope.label === "Trouble review");
+}
+
 function flipFlashcard() {
     if (!getCurrentSet() || state.studyComplete) {
+        return;
+    }
+
+    if (state.studyMode !== "flip") {
         return;
     }
 
     dom.flashcard.classList.toggle("flipped");
 }
 
-function rateCard(difficulty) {
+async function rateCard(difficulty) {
     const set = getCurrentSet();
 
     if (!set || state.studyComplete) {
@@ -1073,26 +1428,18 @@ function rateCard(difficulty) {
         return;
     }
 
-    currentCard.attempts += 1;
-    currentCard.level = Math.max(0, currentCard.level + getLevelDeltaForDifficulty(difficulty));
-
-    currentCard.mastered = currentCard.level >= 3;
-
-    const hoursUntilNextReview = Math.pow(2, Math.max(currentCard.level, 0));
-    currentCard.nextReview = new Date(Date.now() + hoursUntilNextReview * 60 * 60 * 1000);
-
-    if (state.studyQueue[0] === state.currentCardIndex) {
-        state.studyQueue.shift();
-    } else {
-        state.studyQueue = state.studyQueue.filter((cardIndex) => cardIndex !== state.currentCardIndex);
-    }
-
-    if (!currentCard.mastered) {
-        state.studyQueue.push(state.currentCardIndex);
-    }
+    updateCardAfterRating(currentCard, difficulty);
+    updateStreak(difficulty, state.currentCardAttempt);
+    updateStruggleTracking(currentCard);
+    removeCurrentCardFromQueue();
+    reinsertCardByDifficulty(set, currentCard, state.currentCardIndex, difficulty);
 
     state.currentCardIndex = state.studyQueue[0] ?? -1;
     state.studyComplete = state.studyQueue.length === 0;
+
+    if (difficulty === 1) {
+        await maybeUnlockAdaptiveHelp(currentCard, set);
+    }
 
     if (state.studyComplete) {
         finalizeCompletedStudySession(set);
@@ -1105,14 +1452,211 @@ function rateCard(difficulty) {
 
 function getLevelDeltaForDifficulty(difficulty) {
     if (difficulty === 3) {
-        return 2;
+        return 1;
+    }
+
+    if (difficulty === 2) {
+        return 0;
+    }
+
+    return -1;
+}
+
+function resetStudyRoundState() {
+    state.roundStep = 0;
+    state.roundPresentationCount = 0;
+    state.activeCardId = "";
+    state.currentStreak = 0;
+    state.sessionCompletedCardIds = [];
+    state.troublePile = [];
+    state.masteredPile = [];
+    state.adaptiveHelpEnabled = false;
+    resetCurrentCardAttempt();
+    state.typeAnswerValue = "";
+    state.typeAnswerResult = null;
+    state.multipleChoiceState = createEmptyMultipleChoiceState();
+    state.adaptiveHelpState = createEmptyAdaptiveHelpState();
+    clearStreakPulse();
+}
+
+function updateCardAfterRating(card, difficulty) {
+    card.attempts += 1;
+    card.level = Math.max(0, card.level + getLevelDeltaForDifficulty(difficulty));
+    card.difficultyScore = Math.max(0, card.difficultyScore + getDifficultyDelta(difficulty));
+
+    if (difficulty === 1) {
+        card.hardCount += 1;
+        card.mastered = false;
+    }
+
+    if (difficulty === 3) {
+        card.easyCount += 1;
+        card.difficultyScore = Math.max(0, card.difficultyScore - 2);
+    }
+
+    card.mastered = difficulty === 3 || (difficulty !== 1 && card.level >= 3);
+    card.nextReview = calculateNextReviewDate(card, difficulty);
+}
+
+function getDifficultyDelta(difficulty) {
+    if (difficulty === 3) {
+        return -1;
     }
 
     if (difficulty === 2) {
         return 1;
     }
 
-    return -1;
+    return 2;
+}
+
+function calculateNextReviewDate(card, difficulty) {
+    const now = Date.now();
+
+    if (difficulty === 1) {
+        return new Date(now + 15 * 60 * 1000);
+    }
+
+    if (difficulty === 2) {
+        return new Date(now + 8 * 60 * 60 * 1000);
+    }
+
+    const easyDays = Math.max(1, card.level + 1);
+    return new Date(now + easyDays * 24 * 60 * 60 * 1000);
+}
+
+function removeCurrentCardFromQueue() {
+    if (state.studyQueue[0] === state.currentCardIndex) {
+        state.studyQueue.shift();
+        return;
+    }
+
+    state.studyQueue = state.studyQueue.filter((cardIndex) => cardIndex !== state.currentCardIndex);
+}
+
+function reinsertCardByDifficulty(set, card, cardIndex, difficulty) {
+    if (difficulty === 3) {
+        addUniqueValue(state.sessionCompletedCardIds, card.id);
+        return;
+    }
+
+    const offset = getQueueReinsertOffset(card, difficulty);
+    const insertAt = Math.min(offset, state.studyQueue.length);
+    state.studyQueue.splice(insertAt, 0, cardIndex);
+
+    if (difficulty === 2 && !card.mastered) {
+        card.mastered = false;
+    }
+}
+
+function getQueueReinsertOffset(card, difficulty) {
+    const offsets = difficulty === 1 ? HARD_REINSERT_OFFSETS : MEDIUM_REINSERT_OFFSETS;
+    const seed = Array.from(String(card.id || card.question))
+        .reduce((total, character) => total + character.charCodeAt(0), 0);
+
+    return offsets[seed % offsets.length];
+}
+
+function updateStruggleTracking(card) {
+    updateCardPileMembership(card);
+}
+
+function isCardInTrouble(card) {
+    return Boolean(card
+        && card.hardCount >= 2
+        && !card.mastered
+        && card.difficultyScore > 0);
+}
+
+function isCardInMasteredPile(card) {
+    return Boolean(card
+        && !isCardInTrouble(card)
+        && (card.mastered || card.easyCount >= 2));
+}
+
+function updateCardPileMembership(card) {
+    if (!card || !card.id) {
+        return;
+    }
+
+    const isTrouble = isCardInTrouble(card);
+    const isMastered = isCardInMasteredPile(card);
+
+    if (isTrouble) {
+        addUniqueValue(state.troublePile, card.id);
+    } else {
+        state.troublePile = state.troublePile.filter((cardId) => cardId !== card.id);
+    }
+
+    if (isMastered) {
+        addUniqueValue(state.masteredPile, card.id);
+    } else {
+        state.masteredPile = state.masteredPile.filter((cardId) => cardId !== card.id);
+    }
+
+    if (isTrouble) {
+        state.masteredPile = state.masteredPile.filter((cardId) => cardId !== card.id);
+    }
+}
+
+function syncCardPileMembership(set) {
+    state.troublePile = [];
+    state.masteredPile = [];
+
+    if (!set || !Array.isArray(set.cards)) {
+        return;
+    }
+
+    set.cards.forEach((card) => {
+        updateCardPileMembership(card);
+    });
+}
+
+function getTroubleCardIdsInScope(set, cardIndexes) {
+    if (!set || !Array.isArray(cardIndexes)) {
+        return [];
+    }
+
+    return cardIndexes.reduce((ids, cardIndex) => {
+        const card = set.cards[cardIndex];
+
+        if (card && state.troublePile.includes(card.id)) {
+            ids.push(card.id);
+        }
+
+        return ids;
+    }, []);
+}
+
+function updateStreak(difficulty, typeAnswerResult) {
+    const previousStreak = state.currentStreak;
+
+    if (typeAnswerResult && typeAnswerResult.mode === "type" && typeAnswerResult.isCorrect) {
+        state.currentStreak += 1;
+    }
+
+    if (difficulty === 3) {
+        state.currentStreak += 1;
+    } else if (difficulty === 2) {
+        state.currentStreak = Math.max(0, state.currentStreak - 1);
+    } else {
+        state.currentStreak = 0;
+    }
+
+    const set = getCurrentSet();
+
+    if (set) {
+        if (!set.studyStats) {
+            set.studyStats = createDefaultStudyStats();
+        }
+
+        set.studyStats.bestStreak = Math.max(set.studyStats.bestStreak, state.currentStreak);
+        state.bestStreak = set.studyStats.bestStreak;
+    }
+
+    if (state.currentStreak > previousStreak) {
+        triggerStreakPulse();
+    }
 }
 
 function finalizeCompletedStudySession(set) {
@@ -1142,12 +1686,21 @@ function renderStudyState() {
         dom.studyProgressLabel.textContent = "Ready to begin";
         dom.studyProgressFill.style.width = "0%";
         dom.studyScopeLabel.textContent = "Whole set";
+        renderStreakState();
+        renderStudyModeControls();
         dom.studySummary.hidden = true;
         dom.studyActions.hidden = false;
         dom.studyHint.hidden = false;
+        dom.studyInteraction.hidden = true;
+        dom.typeAnswerPanel.hidden = true;
+        dom.multipleChoicePanel.hidden = true;
+        dom.adaptiveHelpPanel.hidden = true;
+        dom.reviewTroubleBtn.hidden = true;
         dom.flashcard.classList.remove("flipped");
+        dom.flashcard.classList.remove("study-locked");
         dom.toggleStudySectionsBtn.disabled = true;
         dom.toggleStudySectionsBtn.textContent = "Auto-Split";
+        dom.restartStudyBtn.textContent = "Restart Round";
         dom.studySectionManager.hidden = true;
         clearInlineMessage(dom.studySectionsMessage);
         dispatchStudyContextChange(null);
@@ -1157,27 +1710,42 @@ function renderStudyState() {
     const totalCards = state.studyScope.cardIndexes.length;
     const remainingCards = state.studyQueue.length;
     const masteredInScope = countMasteredCards(set, state.studyScope.cardIndexes);
-    const progressRatio = totalCards === 0 ? 0 : masteredInScope / totalCards;
+    const completedInScope = countCompletedCardsInScope(set, state.studyScope.cardIndexes);
+    const troubleCardIdsInScope = getTroubleCardIdsInScope(set, state.studyScope.cardIndexes);
+    const progressRatio = totalCards === 0 ? 0 : completedInScope / totalCards;
 
     dom.studySetTitle.textContent = set.title;
     dom.remainingCount.textContent = String(remainingCards);
     dom.studyProgressFill.style.width = `${progressRatio * 100}%`;
     dom.studyScopeLabel.textContent = getStudyScopeLabel(set, state.studyScope);
     dom.toggleStudySectionsBtn.disabled = false;
+    dom.restartStudyBtn.textContent = isTroubleReviewScope() ? "Restart Trouble Round" : "Restart Round";
+    renderStreakState();
+    renderStudyModeControls();
 
     renderStudySectionManager();
 
     if (state.studyComplete) {
-        const scopeLabel = state.studyScope.type === "section" ? "this section" : "this set";
+        const scopeLabel = state.studyScope.type === "section"
+            ? "this section"
+            : state.studyScope.type === "custom"
+                ? state.studyScope.label.toLowerCase()
+                : "this set";
 
         dom.studyProgressLabel.textContent = "Round complete";
         dom.cardQuestion.textContent = "Nice work.";
-        dom.cardAnswer.textContent = "Restart the round, switch sections, or head back to your library.";
+        dom.cardAnswer.textContent = troubleCardIdsInScope.length > 0
+            ? "You can restart, jump into a trouble-only round, or head back to your library."
+            : "Restart the round, switch sections, or head back to your library.";
         dom.flashcard.classList.remove("flipped");
+        dom.flashcard.classList.remove("study-locked");
         dom.studyHint.hidden = true;
         dom.studyActions.hidden = true;
+        dom.studyInteraction.hidden = true;
+        dom.adaptiveHelpPanel.hidden = true;
         dom.studySummary.hidden = false;
-        dom.studySummaryText.textContent = `You mastered ${masteredInScope} of ${totalCards} card${totalCards === 1 ? "" : "s"} in ${scopeLabel}.`;
+        dom.reviewTroubleBtn.hidden = troubleCardIdsInScope.length === 0 || isTroubleReviewScope();
+        dom.studySummaryText.textContent = buildStudySummaryText(masteredInScope, totalCards, scopeLabel);
         dispatchStudyContextChange(null);
         return;
     }
@@ -1192,12 +1760,1132 @@ function renderStudyState() {
 
     dom.cardQuestion.textContent = card.question;
     dom.cardAnswer.textContent = card.answer;
-    dom.studyProgressLabel.textContent = `${masteredInScope} of ${totalCards} mastered`;
-    dom.flashcard.classList.remove("flipped");
+    dom.studyProgressLabel.textContent = `${completedInScope} of ${totalCards} cleared this round`;
+    prepareStudyCardPresentation(card);
     dom.studyHint.hidden = false;
-    dom.studyActions.hidden = false;
     dom.studySummary.hidden = true;
+    dom.reviewTroubleBtn.hidden = true;
+    renderStudyInteraction(set, card);
+    renderAdaptiveHelp(card);
     dispatchStudyContextChange(getStudyCardContext());
+}
+
+function renderStudyModeControls() {
+    dom.studyModeButtons.forEach((button) => {
+        const isActive = button.dataset.studyMode === state.studyMode;
+        button.classList.toggle("active", isActive);
+        button.setAttribute("aria-selected", String(isActive));
+    });
+}
+
+function renderStreakState() {
+    dom.currentStreakCount.textContent = String(state.currentStreak);
+}
+
+function buildStudySummaryText(masteredInScope, totalCards, scopeLabel) {
+    const troubleCount = state.troublePile.length;
+    const masteredCount = state.masteredPile.length;
+    const troubleText = troubleCount > 0 ? ` ${troubleCount} card${troubleCount === 1 ? "" : "s"} landed in your trouble pile.` : "";
+    const masteredText = masteredCount > 0 ? ` ${masteredCount} card${masteredCount === 1 ? "" : "s"} felt locked in.` : "";
+    return `You mastered ${masteredInScope} of ${totalCards} card${totalCards === 1 ? "" : "s"} in ${scopeLabel}.${masteredText}${troubleText}`;
+}
+
+function countCompletedCardsInScope(set, cardIndexes) {
+    const completedIds = new Set(state.sessionCompletedCardIds);
+
+    return cardIndexes.reduce((count, cardIndex) => {
+        const card = set.cards[cardIndex];
+        return count + (card && completedIds.has(card.id) ? 1 : 0);
+    }, 0);
+}
+
+function prepareStudyCardPresentation(card) {
+    if (!card || state.activeCardId === card.id) {
+        return;
+    }
+
+    state.activeCardId = card.id;
+    state.roundStep += 1;
+    state.roundPresentationCount += 1;
+    card.timesSeen += 1;
+    card.lastSeenIndex = state.roundStep;
+    resetCurrentCardAttempt(card.id);
+    state.typeAnswerValue = "";
+    state.typeAnswerResult = null;
+    state.multipleChoiceState = createEmptyMultipleChoiceState();
+    state.adaptiveHelpState = createEmptyAdaptiveHelpState();
+    dom.flashcard.classList.remove("flipped");
+    void warmStudyModeState(card);
+}
+
+async function warmStudyModeState(card) {
+    const set = getCurrentSet();
+
+    if (!set || !card) {
+        return;
+    }
+
+    if (state.studyMode === "multiple-choice") {
+        state.multipleChoiceState = {
+            status: "loading",
+            options: [],
+            feedback: "",
+            selectedOption: "",
+            isCorrect: null
+        };
+        renderStudyInteraction(set, card);
+
+        const options = await getOrCreateDistractors(card, set);
+
+        if (!isCurrentStudyCard(card.id)) {
+            return;
+        }
+
+        state.multipleChoiceState = {
+            status: options.length >= 2 ? "ready" : "unavailable",
+            options,
+            feedback: options.length >= 2
+                ? ""
+                : "Multiple choice is not available for this card yet.",
+            selectedOption: "",
+            isCorrect: null
+        };
+        renderStudyInteraction(set, card);
+    }
+
+    if (card.hardCount >= 2) {
+        await maybeUnlockAdaptiveHelp(card, set, { fromRender: true });
+    }
+}
+
+function renderStudyInteraction(set, card) {
+    const requiresSubmission = state.studyMode !== "flip";
+    const hasSubmitted = hasSubmittedAttemptForCard(card);
+
+    dom.studyInteraction.hidden = !requiresSubmission;
+    dom.typeAnswerPanel.hidden = state.studyMode !== "type";
+    dom.multipleChoicePanel.hidden = state.studyMode !== "multiple-choice";
+    dom.studyActions.hidden = requiresSubmission && !hasSubmitted;
+
+    if (state.studyMode === "flip") {
+        dom.studyHint.textContent = "Flip the card, answer it in your head, then rate how it felt.";
+        dom.flashcard.classList.remove("study-locked");
+        return;
+    }
+
+    dom.flashcard.classList.remove("flipped");
+    dom.flashcard.classList.add("study-locked");
+
+    if (state.studyMode === "type") {
+        renderTypeAnswerState(card);
+        return;
+    }
+
+    renderMultipleChoiceState(card, set);
+}
+
+function renderTypeAnswerState(card) {
+    const hasSubmitted = hasSubmittedAttemptForCard(card);
+    const hasFeedback = Boolean(state.typeAnswerResult && state.typeAnswerResult.feedback);
+
+    dom.studyHint.textContent = hasSubmitted
+        ? (hasFeedback
+            ? "Check the answer, then rate how solid that recall felt."
+            : "This card already has a recorded attempt. Rate it when you're ready.")
+        : "Type the answer from memory before you reveal it.";
+
+    dom.typeAnswerInput.value = state.typeAnswerValue;
+    dom.typeAnswerInput.disabled = hasSubmitted;
+    dom.submitTypeAnswerBtn.disabled = hasSubmitted;
+
+    if (!hasSubmitted) {
+        dom.typeAnswerFeedback.hidden = true;
+        dom.typeAnswerFeedback.textContent = "";
+        delete dom.typeAnswerFeedback.dataset.tone;
+        window.requestAnimationFrame(() => {
+            if (state.studyMode === "type" && !state.studyComplete) {
+                dom.typeAnswerInput.focus();
+            }
+        });
+        return;
+    }
+
+    dom.flashcard.classList.add("flipped");
+
+    if (!hasFeedback) {
+        dom.typeAnswerFeedback.hidden = true;
+        dom.typeAnswerFeedback.textContent = "";
+        delete dom.typeAnswerFeedback.dataset.tone;
+        return;
+    }
+
+    dom.typeAnswerFeedback.hidden = false;
+    dom.typeAnswerFeedback.dataset.tone = state.typeAnswerResult.isCorrect ? "success" : "warning";
+    dom.typeAnswerFeedback.textContent = state.typeAnswerResult.feedback;
+}
+
+function renderMultipleChoiceState(card, set) {
+    const hasSubmitted = hasSubmittedAttemptForCard(card);
+
+    if (state.multipleChoiceState.status === "idle") {
+        dom.studyHint.textContent = "Building choices for this card...";
+        dom.multipleChoiceStatus.textContent = "Preparing answer choices...";
+        dom.multipleChoiceFeedback.hidden = true;
+        dom.multipleChoiceOptions.innerHTML = "";
+        dom.multipleChoiceOptions.appendChild(buildLoadingChoice());
+        if (hasSubmitted) {
+            dom.flashcard.classList.add("flipped");
+        }
+        return;
+    }
+
+    if (state.multipleChoiceState.status === "loading") {
+        dom.studyHint.textContent = "Building choices for this card...";
+        dom.multipleChoiceStatus.textContent = "Loading answer choices...";
+        dom.multipleChoiceFeedback.hidden = true;
+        dom.multipleChoiceOptions.innerHTML = "";
+        dom.multipleChoiceOptions.appendChild(buildLoadingChoice());
+        if (hasSubmitted) {
+            dom.flashcard.classList.add("flipped");
+        }
+        return;
+    }
+
+    if (state.multipleChoiceState.status === "unavailable") {
+        dom.studyHint.textContent = hasSubmitted
+            ? "This card already has a recorded attempt. Rate it or switch modes."
+            : "Multiple choice is unavailable here, but Flip and Type still work.";
+        dom.multipleChoiceStatus.textContent = "This card does not have enough options yet.";
+        dom.multipleChoiceFeedback.hidden = false;
+        dom.multipleChoiceFeedback.dataset.tone = "warning";
+        dom.multipleChoiceFeedback.textContent = state.multipleChoiceState.feedback;
+        dom.multipleChoiceOptions.innerHTML = "";
+        if (hasSubmitted) {
+            dom.flashcard.classList.add("flipped");
+        }
+        return;
+    }
+
+    dom.studyHint.textContent = hasSubmitted
+        ? (state.multipleChoiceState.status === "answered" && state.multipleChoiceState.feedback
+            ? "Compare your pick with the answer, then rate the card."
+            : "This card already has a recorded attempt. Rate it to continue.")
+        : "Choose the best answer before you reveal the card.";
+    dom.multipleChoiceStatus.textContent = hasSubmitted
+        ? "Answer choices are locked for this card."
+        : "Choose the best answer.";
+    dom.multipleChoiceOptions.innerHTML = "";
+
+    state.multipleChoiceState.options.forEach((option) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "study-mc-option";
+        button.textContent = option;
+
+        if (state.multipleChoiceState.status === "answered" || hasSubmitted) {
+            button.disabled = true;
+
+            if (normalizeAnswerText(option) === normalizeAnswerText(card.answer)) {
+                button.classList.add("correct");
+            } else if (state.multipleChoiceState.status === "answered" && option === state.multipleChoiceState.selectedOption) {
+                button.classList.add("incorrect");
+            }
+        } else {
+            button.addEventListener("click", () => submitMultipleChoiceAnswer(option, set, card));
+        }
+
+        dom.multipleChoiceOptions.appendChild(button);
+    });
+
+    if (hasSubmitted) {
+        dom.flashcard.classList.add("flipped");
+    }
+
+    if (state.multipleChoiceState.status !== "answered" || !state.multipleChoiceState.feedback) {
+        dom.multipleChoiceFeedback.hidden = true;
+        dom.multipleChoiceFeedback.textContent = "";
+        delete dom.multipleChoiceFeedback.dataset.tone;
+        return;
+    }
+
+    dom.flashcard.classList.add("flipped");
+    dom.multipleChoiceFeedback.hidden = false;
+    dom.multipleChoiceFeedback.dataset.tone = state.multipleChoiceState.isCorrect ? "success" : "warning";
+    dom.multipleChoiceFeedback.textContent = state.multipleChoiceState.feedback;
+}
+
+function buildLoadingChoice() {
+    const loading = document.createElement("div");
+    loading.className = "study-mc-option loading";
+    loading.textContent = "Loading choices...";
+    return loading;
+}
+
+function renderAdaptiveHelp(card) {
+    if (!card || state.studyComplete) {
+        dom.adaptiveHelpPanel.hidden = true;
+        return;
+    }
+
+    if (card.mastered) {
+        dom.adaptiveHelpPanel.hidden = true;
+        dom.adaptiveHelpContent.innerHTML = "";
+        dom.adaptiveHelpStatus.textContent = "";
+        return;
+    }
+
+    const adaptiveHelp = card.aiSupport;
+
+    if (!adaptiveHelp && card.hardCount < 2 && state.adaptiveHelpState.status !== "loading") {
+        dom.adaptiveHelpPanel.hidden = true;
+        return;
+    }
+
+    dom.adaptiveHelpPanel.hidden = false;
+    dom.adaptiveHelpToggleBtn.hidden = false;
+    dom.adaptiveHelpToggleBtn.setAttribute("aria-pressed", String(state.adaptiveHelpEnabled));
+    dom.adaptiveHelpToggleBtn.textContent = state.adaptiveHelpEnabled
+        ? "Adaptive AI Support On"
+        : "Turn On Adaptive AI Support";
+    dom.adaptiveHelpContent.innerHTML = "";
+
+    if (state.adaptiveHelpState.status === "loading" && state.adaptiveHelpState.cardId === card.id) {
+        dom.adaptiveHelpStatus.textContent = "Unlocking extra help for this trouble card...";
+        return;
+    }
+
+    if (!adaptiveHelp && !state.adaptiveHelpEnabled) {
+        dom.adaptiveHelpStatus.textContent = "Adaptive support is off. Turn it on before Quizzy sends this card to AI.";
+        return;
+    }
+
+    if (!adaptiveHelp) {
+        dom.adaptiveHelpStatus.textContent = "Adaptive help unlocks once AI is available for repeated hard cards.";
+        return;
+    }
+
+    dom.adaptiveHelpStatus.textContent = `Saved once on ${formatDate(adaptiveHelp.generatedAt)} and reused for this card.`;
+
+    buildAdaptiveHelpItem("Simpler explanation", adaptiveHelp.explanation);
+    buildAdaptiveHelpItem("Mnemonic", adaptiveHelp.mnemonic);
+    buildAdaptiveHelpItem("Real-world example", adaptiveHelp.example);
+    buildAdaptiveHelpItem("Alternate question", adaptiveHelp.alternateQuestion);
+}
+
+function buildAdaptiveHelpItem(title, copy) {
+    if (!copy) {
+        return;
+    }
+
+    const item = document.createElement("article");
+    item.className = "adaptive-help-item";
+
+    const heading = document.createElement("h4");
+    heading.textContent = title;
+
+    const body = document.createElement("p");
+    body.textContent = copy;
+
+    item.append(heading, body);
+    dom.adaptiveHelpContent.appendChild(item);
+}
+
+function toggleAdaptiveHelp() {
+    state.adaptiveHelpEnabled = !state.adaptiveHelpEnabled;
+    const set = getCurrentSet();
+    const card = set && !state.studyComplete ? set.cards[state.currentCardIndex] : null;
+
+    if (!card) {
+        return;
+    }
+
+    renderAdaptiveHelp(card);
+
+    if (state.adaptiveHelpEnabled && card.hardCount >= 2 && !card.aiSupport) {
+        void maybeUnlockAdaptiveHelp(card, set, { fromRender: false });
+    }
+}
+
+function changeStudyMode(nextMode) {
+    if (!STUDY_MODE_OPTIONS.includes(nextMode) || state.studyMode === nextMode) {
+        return;
+    }
+
+    const set = getCurrentSet();
+    const card = set && !state.studyComplete ? set.cards[state.currentCardIndex] : null;
+    const shouldWarmMultipleChoice = nextMode === "multiple-choice" && state.multipleChoiceState.status === "idle";
+
+    clearTransientStudyModeState();
+    state.studyMode = nextMode;
+
+    renderStudyState();
+
+    if (!card) {
+        return;
+    }
+
+    if (nextMode === "type" && !hasSubmittedAttemptForCard(card)) {
+        dom.typeAnswerInput.focus();
+        return;
+    }
+
+    if (shouldWarmMultipleChoice) {
+        void warmStudyModeState(card);
+    }
+}
+
+function handleTypeAnswerKeydown(event) {
+    if (event.key !== "Enter") {
+        return;
+    }
+
+    event.preventDefault();
+    submitTypeAnswer();
+}
+
+function submitTypeAnswer() {
+    const set = getCurrentSet();
+    const card = set && !state.studyComplete ? set.cards[state.currentCardIndex] : null;
+
+    if (!card || hasSubmittedAttemptForCard(card)) {
+        return;
+    }
+
+    const learnerAnswer = dom.typeAnswerInput.value;
+    const comparison = compareAnswersLoosely(learnerAnswer, card.answer);
+
+    state.typeAnswerValue = learnerAnswer;
+    state.typeAnswerResult = {
+        isCorrect: comparison.isCorrect,
+        feedback: comparison.isCorrect
+            ? `Nice recall. Correct answer: ${card.answer}`
+            : `${comparison.isClose ? "Close." : "Not quite."} Correct answer: ${card.answer}`
+    };
+    markCardAttemptSubmitted(card, "type", comparison.isCorrect);
+
+    renderStudyInteraction(set, card);
+}
+
+function submitMultipleChoiceAnswer(option, set, card) {
+    if (!card || hasSubmittedAttemptForCard(card)) {
+        return;
+    }
+
+    const isCorrect = normalizeAnswerText(option) === normalizeAnswerText(card.answer);
+
+    state.multipleChoiceState = {
+        ...state.multipleChoiceState,
+        status: "answered",
+        selectedOption: option,
+        isCorrect,
+        feedback: isCorrect
+            ? "Correct. The answer matched the card."
+            : `Correct answer: ${card.answer}`
+    };
+    markCardAttemptSubmitted(card, "multiple-choice", isCorrect);
+
+    renderStudyInteraction(set, card);
+}
+
+function compareAnswersLoosely(userAnswer, correctAnswer) {
+    const normalizedUser = normalizeAnswerText(userAnswer);
+    const normalizedCorrect = normalizeAnswerText(correctAnswer);
+
+    if (!normalizedUser) {
+        return {
+            isCorrect: false,
+            isClose: false,
+            score: 0
+        };
+    }
+
+    if (normalizedUser === normalizedCorrect) {
+        return {
+            isCorrect: true,
+            isClose: true,
+            score: 1
+        };
+    }
+
+    const similarity = calculateTextSimilarity(normalizedUser, normalizedCorrect);
+    const oneContainsOther = normalizedCorrect.includes(normalizedUser) || normalizedUser.includes(normalizedCorrect);
+    const lengthRatio = Math.min(normalizedUser.length, normalizedCorrect.length) / Math.max(normalizedUser.length, normalizedCorrect.length, 1);
+    const isCorrect = similarity >= TYPE_SIMILARITY_THRESHOLD || (oneContainsOther && lengthRatio >= TYPE_SIMILARITY_THRESHOLD);
+
+    return {
+        isCorrect,
+        isClose: similarity >= 0.55 || oneContainsOther,
+        score: similarity
+    };
+}
+
+function normalizeAnswerText(value) {
+    return String(value || "")
+        .toLowerCase()
+        .trim()
+        .replace(/[^\w\s]/g, " ")
+        .replace(/\s+/g, " ");
+}
+
+function calculateTextSimilarity(left, right) {
+    const leftTokens = left.split(" ").filter(Boolean);
+    const rightTokens = right.split(" ").filter(Boolean);
+    const rightSet = new Set(rightTokens);
+    const leftSet = new Set(leftTokens);
+    const sharedTokens = leftTokens.filter((token) => rightSet.has(token));
+    const coverage = leftTokens.length === 0 ? 0 : sharedTokens.length / leftTokens.length;
+    const answerCoverage = rightTokens.length === 0 ? 0 : sharedTokens.length / rightTokens.length;
+    const overlap = sharedTokens.length / Math.max(leftSet.size, rightSet.size, 1);
+    return Math.max(coverage, answerCoverage, overlap);
+}
+
+function startTroubleReview() {
+    const set = getCurrentSet();
+    const troubleCardIdsInScope = getTroubleCardIdsInScope(set, state.studyScope.cardIndexes);
+
+    if (!set || troubleCardIdsInScope.length === 0) {
+        return;
+    }
+
+    const scopeCardIndexes = state.studyScope.cardIndexes.filter((cardIndex) => {
+        const card = set.cards[cardIndex];
+        return card && troubleCardIdsInScope.includes(card.id);
+    });
+
+    if (scopeCardIndexes.length === 0) {
+        showToast("No trouble cards are available for a focused review yet.", "warning");
+        return;
+    }
+
+    initializeStudySession(state.currentSetIndex, {
+        type: "custom",
+        label: "Trouble review",
+        cardIndexes: scopeCardIndexes,
+        includeAll: true
+    }, {
+        enterMode: false,
+        preserveManagerOpen: true
+    });
+
+    showToast("Trouble-only review started.", "success");
+}
+
+async function getOrCreateDistractors(card, set) {
+    invalidateCardCacheIfNeeded(card);
+
+    const savedDistractors = validateDistractorList(card.aiCache.distractors, card, set);
+
+    if (savedDistractors.length >= 3) {
+        return buildMultipleChoiceOptions(card, savedDistractors.slice(0, 3));
+    }
+
+    const localDistractors = buildLocalDistractors(card, set);
+
+    if (localDistractors.length >= 3) {
+        buildCachedDistractorPayload(card, localDistractors.slice(0, 3));
+        saveSets();
+        return buildMultipleChoiceOptions(card, card.aiCache.distractors.slice(0, 3));
+    }
+
+    if (window.QuizzyAI && typeof window.QuizzyAI.getDistractorsForCard === "function") {
+        try {
+            const aiDistractors = await window.QuizzyAI.getDistractorsForCard({
+                question: card.question,
+                answer: card.answer
+            });
+
+            const validAiDistractors = validateDistractorList(aiDistractors, card, set);
+
+            if (validAiDistractors.length >= 3) {
+                buildCachedDistractorPayload(card, validAiDistractors.slice(0, 3));
+                saveSets();
+                return buildMultipleChoiceOptions(card, card.aiCache.distractors.slice(0, 3));
+            }
+        } catch (error) {
+            console.error("Unable to generate distractors for this card.", error);
+        }
+    }
+
+    const fallbackDistractors = buildFallbackDistractors(card, set);
+
+    if (fallbackDistractors.length >= 3) {
+        buildCachedDistractorPayload(card, fallbackDistractors.slice(0, 3));
+        saveSets();
+        return buildMultipleChoiceOptions(card, card.aiCache.distractors.slice(0, 3));
+    }
+
+    return [];
+}
+
+function buildLocalDistractors(card, set) {
+    const profile = analyzeDistractorProfile(card.answer);
+    const distractors = [
+        ...buildNumericDistractors(profile),
+        ...buildDateDistractors(profile)
+    ];
+
+    if (shouldUseSetBasedDistractors(profile)) {
+        distractors.unshift(...buildTemplateDistractorsFromSet(card, set, profile));
+        distractors.unshift(...buildSameDomainSetDistractors(card, set, profile));
+    }
+
+    return validateDistractorList(distractors, card, set, profile).slice(0, 3);
+}
+
+function buildFallbackDistractors(card, set) {
+    return buildLocalDistractors(card, set);
+}
+
+function buildMultipleChoiceOptions(card, distractors) {
+    const options = [card.answer, ...sanitizeDistractorList(distractors, card.answer).slice(0, 3)];
+    return shuffleMultipleChoiceOptions(options);
+}
+
+function shuffleMultipleChoiceOptions(options) {
+    const shuffled = options.slice();
+
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+        const randomIndex = Math.floor(Math.random() * (index + 1));
+        const current = shuffled[index];
+        shuffled[index] = shuffled[randomIndex];
+        shuffled[randomIndex] = current;
+    }
+
+    return shuffled;
+}
+
+function analyzeDistractorProfile(answer) {
+    const raw = String(answer || "").trim();
+    const normalized = normalizeAnswerText(raw);
+    const tokens = raw.split(/\s+/).filter(Boolean);
+    const numeric = /^-?\d+(\.\d+)?$/.test(raw) ? Number(raw) : null;
+    const yearMatch = raw.match(/^(1\d{3}|20\d{2}|21\d{2})$/);
+    const date = parseSupportedDate(raw);
+    const listParts = splitListAnswer(raw);
+
+    return {
+        raw,
+        normalized,
+        tokens,
+        tokenCount: tokens.length,
+        numeric,
+        numericPrecision: getNumericPrecision(raw),
+        isYear: Boolean(yearMatch),
+        yearValue: yearMatch ? Number(yearMatch[1]) : null,
+        date,
+        listParts
+    };
+}
+
+function validateDistractorList(values, card, set, profile = analyzeDistractorProfile(card.answer)) {
+    const sanitized = sanitizeDistractorList(values, card.answer);
+    const ranked = [];
+
+    sanitized.forEach((candidate) => {
+        if (!isValidDistractorCandidate(candidate, card, profile)) {
+            return;
+        }
+
+        ranked.push({
+            candidate,
+            score: scoreDistractorCandidate(candidate, card, profile)
+        });
+    });
+
+    return ranked
+        .sort((left, right) => right.score - left.score)
+        .map((entry) => entry.candidate)
+        .slice(0, 6);
+}
+
+function isValidDistractorCandidate(candidate, card, profile) {
+    if (!candidate || !profile.raw) {
+        return false;
+    }
+
+    const candidateProfile = analyzeDistractorProfile(candidate);
+
+    return isSameDistractorDomain(candidateProfile, profile)
+        && hasReasonableDistractorLength(candidateProfile, profile)
+        && !looksLikeQuestionLeak(candidate, card)
+        && normalizeAnswerText(candidate) !== profile.normalized;
+}
+
+function isSameDistractorDomain(candidateProfile, answerProfile) {
+    if (answerProfile.isYear) {
+        return candidateProfile.isYear;
+    }
+
+    if (answerProfile.date) {
+        return Boolean(candidateProfile.date);
+    }
+
+    if (answerProfile.numeric !== null) {
+        return candidateProfile.numeric !== null;
+    }
+
+    if (answerProfile.listParts.length >= 2) {
+        return candidateProfile.listParts.length >= 2;
+    }
+
+    if (answerProfile.tokenCount <= 1) {
+        return candidateProfile.tokenCount <= 2 && !candidateProfile.date && candidateProfile.numeric === null;
+    }
+
+    return Math.abs(candidateProfile.tokenCount - answerProfile.tokenCount) <= 2;
+}
+
+function hasReasonableDistractorLength(candidateProfile, answerProfile) {
+    const candidateLength = candidateProfile.raw.length;
+    const answerLength = Math.max(answerProfile.raw.length, 1);
+    const ratio = candidateLength / answerLength;
+
+    if (answerProfile.isYear) {
+        return candidateLength === 4;
+    }
+
+    if (answerProfile.date) {
+        return ratio >= 0.7 && ratio <= 1.5;
+    }
+
+    if (answerProfile.numeric !== null) {
+        return ratio >= 0.5 && ratio <= 1.5;
+    }
+
+    if (answerProfile.tokenCount <= 1) {
+        return ratio >= 0.5 && ratio <= 1.8;
+    }
+
+    return ratio >= 0.6 && ratio <= 1.7;
+}
+
+function looksLikeQuestionLeak(candidate, card) {
+    const normalizedCandidate = normalizeAnswerText(candidate);
+    const normalizedQuestion = normalizeAnswerText(card && card.question);
+
+    return Boolean(normalizedQuestion && normalizedQuestion === normalizedCandidate);
+}
+
+function scoreDistractorCandidate(candidate, card, answerProfile) {
+    const candidateProfile = analyzeDistractorProfile(candidate);
+    const lengthDelta = Math.abs(candidateProfile.raw.length - answerProfile.raw.length);
+    const tokenDelta = Math.abs(candidateProfile.tokenCount - answerProfile.tokenCount);
+    const lexicalSimilarity = calculateTextSimilarity(candidateProfile.normalized, answerProfile.normalized);
+    let score = Math.max(0, 1 - (lengthDelta / Math.max(answerProfile.raw.length, 1)));
+
+    score += Math.max(0, 1 - (tokenDelta / Math.max(answerProfile.tokenCount, 1)));
+    score += Math.min(lexicalSimilarity, 0.65);
+
+    if (answerProfile.numeric !== null && candidateProfile.numeric !== null) {
+        score += 1 / (1 + Math.abs(candidateProfile.numeric - answerProfile.numeric));
+    }
+
+    if (answerProfile.isYear && candidateProfile.isYear) {
+        score += 1 / (1 + Math.abs(candidateProfile.yearValue - answerProfile.yearValue));
+    }
+
+    if (answerProfile.date && candidateProfile.date) {
+        const timeDifference = Math.abs(candidateProfile.date.value.getTime() - answerProfile.date.value.getTime());
+        const dayDifference = timeDifference / (24 * 60 * 60 * 1000);
+        score += 1 / (1 + dayDifference);
+    }
+
+    if (answerProfile.listParts.length >= 2 && candidateProfile.listParts.length === answerProfile.listParts.length) {
+        score += 0.4;
+    }
+
+    return score;
+}
+
+function buildSameDomainSetDistractors(card, set, profile) {
+    if (!set || !Array.isArray(set.cards)) {
+        return [];
+    }
+
+    return set.cards
+        .map((candidate) => candidate && typeof candidate.answer === "string" ? candidate.answer : "")
+        .filter((answer) => normalizeAnswerText(answer) !== profile.normalized)
+        .filter((answer) => isSameDistractorDomain(analyzeDistractorProfile(answer), profile))
+        .sort((left, right) => scoreDistractorCandidate(right, card, profile) - scoreDistractorCandidate(left, card, profile));
+}
+
+function buildTemplateDistractorsFromSet(card, set, profile) {
+    if (!set || !Array.isArray(set.cards) || profile.tokenCount < 2 || profile.tokenCount > 6) {
+        return [];
+    }
+
+    const variants = [];
+
+    set.cards.forEach((candidateCard) => {
+        const candidateAnswer = candidateCard && typeof candidateCard.answer === "string" ? candidateCard.answer.trim() : "";
+        const candidateProfile = analyzeDistractorProfile(candidateAnswer);
+
+        if (!candidateAnswer
+            || candidateProfile.tokenCount !== profile.tokenCount
+            || normalizeAnswerText(candidateAnswer) === profile.normalized) {
+            return;
+        }
+
+        const sharedTokens = candidateProfile.tokens.filter((token) => profile.tokens.includes(token));
+
+        if (sharedTokens.length === 0) {
+            return;
+        }
+
+        for (let index = 0; index < profile.tokens.length; index += 1) {
+            if (!candidateProfile.tokens[index] || candidateProfile.tokens[index] === profile.tokens[index]) {
+                continue;
+            }
+
+            const nextTokens = profile.tokens.slice();
+            nextTokens[index] = candidateProfile.tokens[index];
+            variants.push(nextTokens.join(" "));
+        }
+    });
+
+    if (profile.listParts.length >= 2) {
+        const delimiter = detectListDelimiter(profile.raw);
+
+        if (delimiter) {
+            for (let index = 0; index < profile.listParts.length; index += 1) {
+                const nextParts = profile.listParts.slice();
+                nextParts[index] = profile.listParts[(index + 1) % profile.listParts.length];
+                variants.push(nextParts.join(`${delimiter} `));
+            }
+        }
+    }
+
+    return variants;
+}
+
+function shouldUseSetBasedDistractors(profile) {
+    return profile.numeric !== null
+        || profile.isYear
+        || Boolean(profile.date)
+        || profile.listParts.length >= 2
+        || profile.tokenCount >= 2;
+}
+
+function buildNumericDistractors(profile) {
+    if (profile.numeric === null || profile.date || profile.isYear) {
+        return [];
+    }
+
+    const value = profile.numeric;
+    const step = profile.numericPrecision > 0 ? Number((1 / (10 ** profile.numericPrecision)).toFixed(profile.numericPrecision)) : 1;
+    const scale = Math.max(step, Math.abs(value) >= 10 ? Math.round(Math.abs(value) * 0.1) : step);
+    const offsets = [step, scale, -step, -scale, step * 2, -step * 2];
+
+    return offsets
+        .map((offset) => formatNumericDistractor(value + offset, profile.numericPrecision))
+        .filter(Boolean);
+}
+
+function buildDateDistractors(profile) {
+    if (profile.isYear) {
+        return [profile.yearValue - 1, profile.yearValue + 1, profile.yearValue - 5, profile.yearValue + 5]
+            .map((value) => String(value));
+    }
+
+    if (!profile.date) {
+        return [];
+    }
+
+    const offsets = [
+        { years: -1 },
+        { years: 1 },
+        { days: -1 },
+        { days: 1 },
+        { months: 1 }
+    ];
+
+    return offsets
+        .map((offset) => shiftDate(profile.date.value, offset))
+        .map((value) => formatDateLike(value, profile.date.format))
+        .filter(Boolean);
+}
+
+function getNumericPrecision(value) {
+    const trimmed = String(value || "").trim();
+
+    if (!trimmed.includes(".")) {
+        return 0;
+    }
+
+    return trimmed.split(".")[1].length;
+}
+
+function formatNumericDistractor(value, precision) {
+    if (!Number.isFinite(value)) {
+        return "";
+    }
+
+    return precision > 0 ? value.toFixed(precision) : String(Math.round(value));
+}
+
+function splitListAnswer(value) {
+    const delimiter = detectListDelimiter(value);
+
+    if (!delimiter) {
+        return [];
+    }
+
+    const parts = String(value || "")
+        .split(delimiter)
+        .map((part) => part.trim())
+        .filter(Boolean);
+
+    return parts.length >= 2 ? parts : [];
+}
+
+function detectListDelimiter(value) {
+    if (String(value || "").includes(";")) {
+        return ";";
+    }
+
+    if (String(value || "").includes(",")) {
+        return ",";
+    }
+
+    if (String(value || "").includes("/")) {
+        return "/";
+    }
+
+    return "";
+}
+
+function parseSupportedDate(value) {
+    const trimmed = String(value || "").trim();
+    let match = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+
+    if (match) {
+        return buildParsedDate(Number(match[1]), Number(match[2]), Number(match[3]), "iso");
+    }
+
+    match = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+
+    if (match) {
+        return buildParsedDate(Number(match[3]), Number(match[1]), Number(match[2]), "slash");
+    }
+
+    match = trimmed.match(/^([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})$/);
+
+    if (match) {
+        const monthIndex = getMonthIndex(match[1]);
+
+        if (monthIndex > 0) {
+            return buildParsedDate(Number(match[3]), monthIndex, Number(match[2]), "long");
+        }
+    }
+
+    return null;
+}
+
+function buildParsedDate(year, month, day, format) {
+    const value = new Date(year, month - 1, day);
+
+    if (Number.isNaN(value.getTime())
+        || value.getFullYear() !== year
+        || value.getMonth() !== month - 1
+        || value.getDate() !== day) {
+        return null;
+    }
+
+    return {
+        value,
+        format
+    };
+}
+
+function getMonthIndex(label) {
+    const normalized = String(label || "").trim().toLowerCase();
+    const months = [
+        "january",
+        "february",
+        "march",
+        "april",
+        "may",
+        "june",
+        "july",
+        "august",
+        "september",
+        "october",
+        "november",
+        "december"
+    ];
+
+    return months.findIndex((month) => month.startsWith(normalized)) + 1;
+}
+
+function shiftDate(date, offset) {
+    const next = new Date(date.getTime());
+
+    if (offset.years) {
+        next.setFullYear(next.getFullYear() + offset.years);
+    }
+
+    if (offset.months) {
+        next.setMonth(next.getMonth() + offset.months);
+    }
+
+    if (offset.days) {
+        next.setDate(next.getDate() + offset.days);
+    }
+
+    return next;
+}
+
+function formatDateLike(date, format) {
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+
+    if (format === "iso") {
+        return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    }
+
+    if (format === "slash") {
+        return `${month}/${day}/${year}`;
+    }
+
+    if (format === "long") {
+        const monthName = [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December"
+        ][month - 1];
+
+        return `${monthName} ${day}, ${year}`;
+    }
+
+    return "";
+}
+
+async function getOrCreateAdaptiveHelp(card) {
+    invalidateCardCacheIfNeeded(card);
+
+    if (card.aiSupport) {
+        return card.aiSupport;
+    }
+
+    if (!window.QuizzyAI || typeof window.QuizzyAI.getAdaptiveHelpForCard !== "function") {
+        return null;
+    }
+
+    try {
+        const adaptiveHelp = await window.QuizzyAI.getAdaptiveHelpForCard({
+            question: card.question,
+            answer: card.answer
+        });
+
+        if (!adaptiveHelp) {
+            return null;
+        }
+
+        buildCachedAdaptiveHelpPayload(card, {
+            ...adaptiveHelp,
+            generatedAt: new Date().toISOString()
+        });
+        saveSets();
+        return card.aiSupport;
+    } catch (error) {
+        console.error("Unable to generate adaptive help for this card.", error);
+        return null;
+    }
+}
+
+async function maybeUnlockAdaptiveHelp(card, set, options = {}) {
+    if (!card || card.hardCount < 2) {
+        return;
+    }
+
+    if (!state.adaptiveHelpEnabled && !card.aiSupport) {
+        if (isCurrentStudyCard(card.id)) {
+            renderAdaptiveHelp(card);
+        }
+        return;
+    }
+
+    if (card.aiSupport) {
+        if (isCurrentStudyCard(card.id)) {
+            renderAdaptiveHelp(card);
+        }
+        return;
+    }
+
+    if (state.adaptiveHelpState.status === "loading" && state.adaptiveHelpState.cardId === card.id) {
+        return;
+    }
+
+    state.adaptiveHelpState = {
+        status: "loading",
+        cardId: card.id,
+        message: "Loading adaptive help..."
+    };
+
+    if (isCurrentStudyCard(card.id)) {
+        renderAdaptiveHelp(card);
+    }
+
+    const adaptiveHelp = await getOrCreateAdaptiveHelp(card, set);
+
+    if (!isCurrentStudyCard(card.id)) {
+        return;
+    }
+
+    state.adaptiveHelpState = adaptiveHelp
+        ? {
+            status: "ready",
+            cardId: card.id,
+            message: "Adaptive help ready."
+        }
+        : {
+            status: options.fromRender ? "idle" : "unavailable",
+            cardId: card.id,
+            message: "Adaptive help is unavailable right now."
+        };
+
+    renderAdaptiveHelp(card);
+}
+
+function handleStudyAiAvailabilityChange() {
+    const set = getCurrentSet();
+    const card = set && !state.studyComplete ? set.cards[state.currentCardIndex] : null;
+
+    if (!card) {
+        return;
+    }
+
+    void warmStudyModeState(card);
+    renderAdaptiveHelp(card);
+}
+
+function triggerStreakPulse() {
+    clearStreakPulse();
+    dom.currentStreakCount.classList.add("is-pulsing");
+    state.streakPulseTimeoutId = window.setTimeout(() => {
+        clearStreakPulse();
+    }, 380);
+}
+
+function clearStreakPulse() {
+    if (state.streakPulseTimeoutId) {
+        window.clearTimeout(state.streakPulseTimeoutId);
+        state.streakPulseTimeoutId = 0;
+    }
+
+    if (dom.currentStreakCount) {
+        dom.currentStreakCount.classList.remove("is-pulsing");
+    }
 }
 
 function renderStudySectionManager() {
@@ -1446,7 +3134,7 @@ function createStudySections() {
 
         if (state.studyScope.type === "section" && !findStudySectionById(set, state.studyScope.sectionId)) {
             state.studyScope = resolveStudyScope(set, { type: "full", sectionId: null });
-            state.studyQueue = buildStudyQueue(set, state.studyScope.cardIndexes);
+            state.studyQueue = buildStudyQueue(set, state.studyScope.cardIndexes, state.studyScope);
             state.currentCardIndex = state.studyQueue[0] ?? -1;
             state.studyComplete = state.studyQueue.length === 0;
             state.studyCompletionRecorded = false;
@@ -1564,6 +3252,10 @@ function countDueCards(set, cardIndexes) {
 }
 
 function getStudyScopeLabel(set, scope) {
+    if (scope.type === "custom" && scope.label) {
+        return scope.label;
+    }
+
     if (scope.type === "section") {
         const section = findStudySectionById(set, scope.sectionId);
 
@@ -1636,7 +3328,7 @@ function getStudyCardContext() {
         return null;
     }
 
-    const currentPosition = Math.max(state.studyScope.cardIndexes.length - state.studyQueue.length, 0);
+    const currentPosition = Math.max(Math.min(state.roundPresentationCount, state.studyScope.cardIndexes.length) - 1, 0);
 
     return {
         setTitle: set.title,

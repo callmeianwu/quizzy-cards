@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/QuizzyCardsIcon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -246,7 +247,9 @@ A: 4"></textarea>
     <section class="study-view" id="studyView" hidden aria-labelledby="studySetTitle">
         <div class="study-shell">
             <header class="study-header">
-                <button class="ghost-btn" type="button" id="exitStudyBtn">Back to Dashboard</button>
+                <div class="study-header-leading">
+                    <button class="ghost-btn" type="button" id="exitStudyBtn">Back to Dashboard</button>
+                </div>
 
                 <div class="study-header-copy">
                     <p class="eyebrow">Focus mode</p>
@@ -264,6 +267,10 @@ A: 4"></textarea>
                 </div>
 
                 <div class="study-header-actions">
+                    <span class="study-streak" id="studyStreak" aria-label="Current streak">
+                        <span class="study-streak-icon" aria-hidden="true">🔥</span>
+                        <strong class="study-streak-value" id="currentStreakCount">0</strong>
+                    </span>
                     <button class="secondary-btn compact-btn" type="button" id="toggleStudySectionsBtn">Auto-Split</button>
                     <button class="secondary-btn compact-btn" type="button" id="restartStudyBtn">Restart Round</button>
                 </div>
@@ -319,13 +326,58 @@ A: 4"></textarea>
                         </div>
                     </button>
 
+                    <div class="study-mode-toggle" id="studyModeToggle" role="tablist" aria-label="Study mode">
+                        <button class="study-mode-btn active" type="button" data-study-mode="flip" aria-selected="true">Flip</button>
+                        <button class="study-mode-btn" type="button" data-study-mode="type" aria-selected="false">Type Answer</button>
+                        <button class="study-mode-btn" type="button" data-study-mode="multiple-choice" aria-selected="false">Multiple Choice</button>
+                    </div>
+
                     <p class="study-hint" id="studyHint">Flip the card, answer it in your head, then rate how it felt.</p>
+
+                    <section class="study-interaction" id="studyInteraction" hidden>
+                        <div class="study-answer-panel" id="typeAnswerPanel" hidden>
+                            <label class="field-label" for="typeAnswerInput">Type your answer</label>
+                            <div class="study-answer-row">
+                                <input
+                                    type="text"
+                                    id="typeAnswerInput"
+                                    class="study-answer-input"
+                                    placeholder="Write what you remember, then submit"
+                                    autocomplete="off"
+                                >
+                                <button class="secondary-btn compact-btn" type="button" id="submitTypeAnswerBtn">Check Answer</button>
+                            </div>
+                            <p class="study-answer-feedback" id="typeAnswerFeedback" hidden></p>
+                        </div>
+
+                        <div class="study-answer-panel" id="multipleChoicePanel" hidden>
+                            <p class="study-mc-status" id="multipleChoiceStatus">Choose the best answer.</p>
+                            <div class="study-mc-options" id="multipleChoiceOptions"></div>
+                            <p class="study-answer-feedback" id="multipleChoiceFeedback" hidden></p>
+                        </div>
+                    </section>
 
                     <div class="study-actions" id="studyActions">
                         <button class="rating-btn hard" type="button" data-rating="1">Hard</button>
                         <button class="rating-btn medium" type="button" data-rating="2">Medium</button>
                         <button class="rating-btn easy" type="button" data-rating="3">Easy</button>
                     </div>
+
+                    <section class="adaptive-help-panel" id="adaptiveHelpPanel" hidden aria-labelledby="adaptiveHelpTitle">
+                        <div class="adaptive-help-header">
+                            <div>
+                                <p class="section-kicker">Adaptive support</p>
+                                <h3 id="adaptiveHelpTitle">Unlocked for this card</h3>
+                            </div>
+                            <span class="study-ai-badge" id="adaptiveHelpBadge">Trouble card</span>
+                        </div>
+
+                        <p class="adaptive-help-status" id="adaptiveHelpStatus">Extra help will appear here after repeated struggle.</p>
+                        <button class="study-ai-setup-toggle adaptive-help-toggle" type="button" id="adaptiveHelpToggleBtn" aria-pressed="false">
+                            Turn On Adaptive AI Support
+                        </button>
+                        <div class="adaptive-help-grid" id="adaptiveHelpContent"></div>
+                    </section>
 
                     <button class="study-helper-toggle" type="button" id="toggleStudyAiBtn" aria-expanded="false" aria-controls="studyAiHelper">
                         Open AI Helper
@@ -384,6 +436,7 @@ A: 4"></textarea>
                         <p id="studySummaryText">Run it again for another pass, or head back to your library for a different set.</p>
                         <div class="summary-actions">
                             <button class="primary-btn" type="button" id="studyAgainBtn">Study Again</button>
+                            <button class="secondary-btn" type="button" id="reviewTroubleBtn" hidden>Review Trouble Cards</button>
                             <button class="secondary-btn" type="button" id="returnToLibraryBtn">Back to Library</button>
                         </div>
                     </section>

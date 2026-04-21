@@ -78,6 +78,22 @@ function buildOpenAiRequest(payload) {
         };
     }
 
+    if (mode === "distractors") {
+        return {
+            mode,
+            temperature: 0.5,
+            messages: buildDistractorMessages(payload)
+        };
+    }
+
+    if (mode === "adaptive-help") {
+        return {
+            mode,
+            temperature: 0.5,
+            messages: buildAdaptiveHelpMessages(payload)
+        };
+    }
+
     throw createHttpError("Unsupported AI request mode.", 400);
 }
 
@@ -155,6 +171,66 @@ function buildStudyHelpMessages(payload) {
             ].join("\n")
         }
     ];
+}
+
+function buildDistractorMessages(payload) {
+    const card = readCardPayload(payload);
+
+    return [
+        {
+            role: "system",
+            content: [
+                "Generate 3 incorrect but plausible answers for this flashcard.",
+                "They must be the same type/category as the correct answer and commonly confused with it.",
+                "Do not include jokes or unrelated items.",
+                "Return only a JSON array of three short strings.",
+                "Do not include the correct answer.",
+                "Keep distractors concise and classroom-appropriate."
+            ].join("\n")
+        },
+        {
+            role: "user",
+            content: [
+                `Question: ${card.question}`,
+                `Correct answer: ${card.answer}`
+            ].join("\n")
+        }
+    ];
+}
+
+function buildAdaptiveHelpMessages(payload) {
+    const card = readCardPayload(payload);
+
+    return [
+        {
+            role: "system",
+            content: [
+                "You create concise support for a student who is struggling with a flashcard.",
+                "Return only valid JSON with these string fields: explanation, mnemonic, example, alternateQuestion.",
+                "Keep each field practical and brief."
+            ].join("\n")
+        },
+        {
+            role: "user",
+            content: [
+                `Question: ${card.question}`,
+                `Correct answer: ${card.answer}`
+            ].join("\n")
+        }
+    ];
+}
+
+function readCardPayload(payload) {
+    const card = payload && typeof payload.card === "object" ? payload.card : null;
+
+    if (!card) {
+        throw createHttpError("Card context is required.", 400);
+    }
+
+    return {
+        question: readBoundedString(card.question, "Card question", MAX_CONTEXT_FIELD_LENGTH),
+        answer: readBoundedString(card.answer, "Card answer", MAX_CONTEXT_FIELD_LENGTH)
+    };
 }
 
 async function requestOpenAi(apiKey, messages, temperature) {

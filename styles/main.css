@@ -560,6 +560,12 @@ textarea:focus-visible {
     gap: 16px;
 }
 
+.library-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
 .shared-title-field,
 .field-grid,
 .count-block,
@@ -641,6 +647,35 @@ textarea {
 
 .api-key-form {
     margin-top: 20px;
+}
+
+.ai-security-note {
+    margin-top: 20px;
+    padding: 18px;
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.88);
+    border: 1px solid rgba(17, 24, 39, 0.08);
+}
+
+.ai-security-note .field-label,
+.ai-security-note .field-status {
+    margin: 0;
+}
+
+.ai-security-note .field-status {
+    margin-top: 10px;
+}
+
+.ai-security-note .field-status[data-tone="success"] {
+    color: #166952;
+}
+
+.ai-security-note .field-status[data-tone="warning"] {
+    color: #8a5b00;
+}
+
+.ai-security-note .field-status[data-tone="error"] {
+    color: #8f2338;
 }
 
 .field-inline {
@@ -1560,7 +1595,8 @@ button:disabled {
     }
 
     .hero-chips,
-    .set-actions {
+    .set-actions,
+    .library-actions {
         margin-top: 14px;
         justify-content: flex-start;
     }

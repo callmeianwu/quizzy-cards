@@ -116,14 +116,10 @@ A: 4"></textarea>
                                     </div>
                                 </div>
 
-                                <form class="api-key-form" id="apiKeyForm">
-                                    <label class="field-label" for="aiApiKey">OpenAI API key</label>
-                                    <div class="field-inline">
-                                        <input type="password" id="aiApiKey" class="ai-input" placeholder="Paste your API key">
-                                        <button class="secondary-btn" type="submit" id="saveApiKeyBtn">Save Key</button>
-                                    </div>
-                                    <p class="field-status" id="aiKeyStatus">No API key saved in this browser yet.</p>
-                                </form>
+                                <div class="ai-security-note" aria-live="polite">
+                                    <p class="field-label">Secure AI connection</p>
+                                    <p class="field-status" id="aiKeyStatus">Checking whether the server-side AI connection is ready...</p>
+                                </div>
 
                                 <label class="field-label" for="aiPrompt">Study topic</label>
                                 <textarea id="aiPrompt" class="ai-input" rows="7" placeholder="Create flashcards about cellular respiration basics for a high school biology class."></textarea>
@@ -186,7 +182,10 @@ A: 4"></textarea>
                                 <h3>Your saved sets</h3>
                                 <p>Pick a set and jump into focus mode, or export your whole collection.</p>
                             </div>
-                            <button class="secondary-btn" type="button" id="exportAllSetsBtn">Export All</button>
+                            <div class="library-actions">
+                                <button class="secondary-btn" type="button" id="exportAllSetsBtn">Export All</button>
+                                <button class="danger-btn compact-btn" type="button" id="clearAllDataBtn">Clear Local Data</button>
+                            </div>
                         </div>
 
                         <div class="library-empty" id="libraryEmptyState" hidden>

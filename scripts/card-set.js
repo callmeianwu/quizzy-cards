@@ -107,7 +107,6 @@ function cacheDom() {
     dom.flashcard = document.getElementById("flashcard");
     dom.cardQuestion = document.getElementById("cardQuestion");
     dom.cardAnswer = document.getElementById("cardAnswer");
-    dom.remainingCount = document.getElementById("remainingCount");
     dom.studyProgressLabel = document.getElementById("studyProgressLabel");
     dom.studyProgressFill = document.getElementById("studyProgressFill");
     dom.studySetTitle = document.getElementById("studySetTitle");
@@ -1690,7 +1689,6 @@ function renderStudyState() {
         dom.studySetTitle.textContent = "Study session";
         dom.cardQuestion.textContent = "";
         dom.cardAnswer.textContent = "";
-        dom.remainingCount.textContent = "0";
         dom.studyProgressLabel.textContent = "Ready to begin";
         dom.studyProgressFill.style.width = "0%";
         dom.studyScopeLabel.textContent = "Whole set";
@@ -1716,14 +1714,12 @@ function renderStudyState() {
     }
 
     const totalCards = state.studyScope.cardIndexes.length;
-    const remainingCards = state.studyQueue.length;
     const masteredInScope = countMasteredCards(set, state.studyScope.cardIndexes);
     const completedInScope = countCompletedCardsInScope(set, state.studyScope.cardIndexes);
     const troubleCardIdsInScope = getTroubleCardIdsInScope(set, state.studyScope.cardIndexes);
     const progressRatio = totalCards === 0 ? 0 : completedInScope / totalCards;
 
     dom.studySetTitle.textContent = set.title;
-    dom.remainingCount.textContent = String(remainingCards);
     dom.studyProgressFill.style.width = `${progressRatio * 100}%`;
     dom.studyScopeLabel.textContent = getStudyScopeLabel(set, state.studyScope);
     dom.toggleStudySectionsBtn.disabled = false;

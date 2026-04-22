@@ -1247,6 +1247,8 @@ function resolveStudyScope(set, requestedScope) {
         return createEmptyStudyScope();
     }
 
+    const shouldIncludeAll = Boolean(requestedScope && requestedScope.includeAll);
+
     if (requestedScope && requestedScope.type === "custom" && Array.isArray(requestedScope.cardIndexes)) {
         const cardIndexes = Array.from(new Set(requestedScope.cardIndexes
             .map((value) => Number(value))
@@ -1272,7 +1274,7 @@ function resolveStudyScope(set, requestedScope) {
                 sectionId: section.id,
                 cardIndexes: section.cardIndexes.slice(),
                 label: `Section ${section.label}`,
-                includeAll: false
+                includeAll: shouldIncludeAll
             };
         }
     }
@@ -1282,7 +1284,7 @@ function resolveStudyScope(set, requestedScope) {
         sectionId: null,
         cardIndexes: set.cards.map((_, cardIndex) => cardIndex),
         label: "Whole set",
-        includeAll: false
+        includeAll: shouldIncludeAll
     };
 }
 
@@ -1374,7 +1376,10 @@ function restartSession() {
         return;
     }
 
-    initializeStudySession(state.currentSetIndex, state.studyScope, {
+    initializeStudySession(state.currentSetIndex, {
+        ...cloneStudyScope(state.studyScope),
+        includeAll: true
+    }, {
         enterMode: false,
         preserveManagerOpen: true
     });
@@ -1391,7 +1396,10 @@ function studyAgain() {
         ? (state.resumeStudyScope.cardIndexes.length > 0 ? state.resumeStudyScope : createEmptyStudyScope())
         : state.studyScope;
 
-    initializeStudySession(state.currentSetIndex, targetScope, {
+    initializeStudySession(state.currentSetIndex, {
+        ...cloneStudyScope(targetScope),
+        includeAll: true
+    }, {
         enterMode: false,
         preserveManagerOpen: true
     });

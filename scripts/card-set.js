@@ -17,6 +17,8 @@ const STUDY_MODE_OPTIONS = ["flip", "type", "multiple-choice"];
 const AI_CACHE_VERSION = 2;
 const HARD_REINSERT_OFFSETS = [2, 3];
 const MEDIUM_REINSERT_OFFSETS = [5, 6, 7, 8];
+const MIN_MULTIPLE_CHOICE_DISTRACTORS = 2;
+const MAX_MULTIPLE_CHOICE_DISTRACTORS = 3;
 const MAX_SET_TITLE_LENGTH = 120;
 const MAX_CARDS_PER_SET = 200;
 const MAX_CARD_TEXT_LENGTH = 2000;
@@ -1845,10 +1847,12 @@ async function warmStudyModeState(card) {
             return;
         }
 
+        const hasEnoughMultipleChoiceOptions = options.length >= MIN_MULTIPLE_CHOICE_DISTRACTORS + 1;
+
         state.multipleChoiceState = {
-            status: options.length >= 2 ? "ready" : "unavailable",
+            status: hasEnoughMultipleChoiceOptions ? "ready" : "unavailable",
             options,
-            feedback: options.length >= 2
+            feedback: hasEnoughMultipleChoiceOptions
                 ? ""
                 : "Multiple choice is not available for this card yet.",
             selectedOption: "",
@@ -2279,16 +2283,16 @@ async function getOrCreateDistractors(card, set) {
 
     const savedDistractors = validateDistractorList(card.aiCache.distractors, card, set);
 
-    if (savedDistractors.length >= 3) {
-        return buildMultipleChoiceOptions(card, savedDistractors.slice(0, 3));
+    if (savedDistractors.length >= MIN_MULTIPLE_CHOICE_DISTRACTORS) {
+        return buildMultipleChoiceOptions(card, savedDistractors.slice(0, MAX_MULTIPLE_CHOICE_DISTRACTORS));
     }
 
     const localDistractors = buildLocalDistractors(card, set);
 
-    if (localDistractors.length >= 3) {
-        buildCachedDistractorPayload(card, localDistractors.slice(0, 3));
+    if (localDistractors.length >= MIN_MULTIPLE_CHOICE_DISTRACTORS) {
+        buildCachedDistractorPayload(card, localDistractors.slice(0, MAX_MULTIPLE_CHOICE_DISTRACTORS));
         saveSets();
-        return buildMultipleChoiceOptions(card, card.aiCache.distractors.slice(0, 3));
+        return buildMultipleChoiceOptions(card, card.aiCache.distractors.slice(0, MAX_MULTIPLE_CHOICE_DISTRACTORS));
     }
 
     if (window.QuizzyAI && typeof window.QuizzyAI.getDistractorsForCard === "function") {
@@ -2300,10 +2304,10 @@ async function getOrCreateDistractors(card, set) {
 
             const validAiDistractors = validateDistractorList(aiDistractors, card, set);
 
-            if (validAiDistractors.length >= 3) {
-                buildCachedDistractorPayload(card, validAiDistractors.slice(0, 3));
+            if (validAiDistractors.length >= MIN_MULTIPLE_CHOICE_DISTRACTORS) {
+                buildCachedDistractorPayload(card, validAiDistractors.slice(0, MAX_MULTIPLE_CHOICE_DISTRACTORS));
                 saveSets();
-                return buildMultipleChoiceOptions(card, card.aiCache.distractors.slice(0, 3));
+                return buildMultipleChoiceOptions(card, card.aiCache.distractors.slice(0, MAX_MULTIPLE_CHOICE_DISTRACTORS));
             }
         } catch (error) {
             console.error("Unable to generate distractors for this card.", error);
@@ -2312,10 +2316,10 @@ async function getOrCreateDistractors(card, set) {
 
     const fallbackDistractors = buildFallbackDistractors(card, set);
 
-    if (fallbackDistractors.length >= 3) {
-        buildCachedDistractorPayload(card, fallbackDistractors.slice(0, 3));
+    if (fallbackDistractors.length >= MIN_MULTIPLE_CHOICE_DISTRACTORS) {
+        buildCachedDistractorPayload(card, fallbackDistractors.slice(0, MAX_MULTIPLE_CHOICE_DISTRACTORS));
         saveSets();
-        return buildMultipleChoiceOptions(card, card.aiCache.distractors.slice(0, 3));
+        return buildMultipleChoiceOptions(card, card.aiCache.distractors.slice(0, MAX_MULTIPLE_CHOICE_DISTRACTORS));
     }
 
     return [];
@@ -2333,7 +2337,7 @@ function buildLocalDistractors(card, set) {
         distractors.unshift(...buildSameDomainSetDistractors(card, set, profile));
     }
 
-    return validateDistractorList(distractors, card, set, profile).slice(0, 3);
+    return validateDistractorList(distractors, card, set, profile).slice(0, MAX_MULTIPLE_CHOICE_DISTRACTORS);
 }
 
 function buildFallbackDistractors(card, set) {
@@ -2341,7 +2345,7 @@ function buildFallbackDistractors(card, set) {
 }
 
 function buildMultipleChoiceOptions(card, distractors) {
-    const options = [card.answer, ...sanitizeDistractorList(distractors, card.answer).slice(0, 3)];
+    const options = [card.answer, ...sanitizeDistractorList(distractors, card.answer).slice(0, MAX_MULTIPLE_CHOICE_DISTRACTORS)];
     return shuffleMultipleChoiceOptions(options);
 }
 

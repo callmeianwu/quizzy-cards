@@ -708,7 +708,7 @@ function renderStudyHelperVisibility() {
     const hasContext = Boolean(studyHelper.contextKey);
 
     studyHelper.dom.toggleButton.disabled = !hasContext;
-    studyHelper.dom.toggleButton.textContent = studyHelper.isOpen ? "Hide AI Helper" : "Open AI Helper";
+    studyHelper.dom.toggleButton.textContent = studyHelper.isOpen ? "Close AI" : "Ask AI";
     studyHelper.dom.toggleButton.setAttribute("aria-expanded", String(studyHelper.isOpen));
     studyHelper.dom.container.hidden = !studyHelper.isOpen;
 }

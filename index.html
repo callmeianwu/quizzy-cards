@@ -311,134 +311,142 @@ A: 4"></textarea>
             </section>
 
             <main class="study-main">
-                <div class="study-stage">
-                    <button class="flashcard" id="flashcard" type="button" aria-live="polite">
-                        <div class="flashcard-inner">
-                            <div class="flashcard-face flashcard-front">
-                                <span class="face-label">Question</span>
-                                <div class="flashcard-copy" id="cardQuestion"></div>
+                <div class="study-layout">
+                    <div class="study-stage">
+                        <button class="flashcard" id="flashcard" type="button" aria-live="polite">
+                            <div class="flashcard-inner">
+                                <div class="flashcard-face flashcard-front">
+                                    <span class="face-label">Question</span>
+                                    <div class="flashcard-copy" id="cardQuestion"></div>
+                                </div>
+                                <div class="flashcard-face flashcard-back">
+                                    <span class="face-label">Answer</span>
+                                    <div class="flashcard-copy" id="cardAnswer"></div>
+                                </div>
                             </div>
-                            <div class="flashcard-face flashcard-back">
-                                <span class="face-label">Answer</span>
-                                <div class="flashcard-copy" id="cardAnswer"></div>
-                            </div>
-                        </div>
-                    </button>
-
-                    <div class="study-mode-toggle" id="studyModeToggle" role="tablist" aria-label="Study mode">
-                        <button class="study-mode-btn active" type="button" data-study-mode="flip" aria-selected="true">Flip</button>
-                        <button class="study-mode-btn" type="button" data-study-mode="type" aria-selected="false">Type Answer</button>
-                        <button class="study-mode-btn" type="button" data-study-mode="multiple-choice" aria-selected="false">Multiple Choice</button>
-                    </div>
-
-                    <p class="study-hint" id="studyHint">Flip the card, answer it in your head, then rate how it felt.</p>
-
-                    <section class="study-interaction" id="studyInteraction" hidden>
-                        <div class="study-answer-panel" id="typeAnswerPanel" hidden>
-                            <label class="field-label" for="typeAnswerInput">Type your answer</label>
-                            <div class="study-answer-row">
-                                <input
-                                    type="text"
-                                    id="typeAnswerInput"
-                                    class="study-answer-input"
-                                    placeholder="Write what you remember, then submit"
-                                    autocomplete="off"
-                                >
-                                <button class="secondary-btn compact-btn" type="button" id="submitTypeAnswerBtn">Check Answer</button>
-                            </div>
-                            <p class="study-answer-feedback" id="typeAnswerFeedback" hidden></p>
-                        </div>
-
-                        <div class="study-answer-panel" id="multipleChoicePanel" hidden>
-                            <p class="study-mc-status" id="multipleChoiceStatus">Choose the best answer.</p>
-                            <div class="study-mc-options" id="multipleChoiceOptions"></div>
-                            <p class="study-answer-feedback" id="multipleChoiceFeedback" hidden></p>
-                        </div>
-                    </section>
-
-                    <div class="study-actions" id="studyActions">
-                        <button class="rating-btn hard" type="button" data-rating="1">Hard</button>
-                        <button class="rating-btn medium" type="button" data-rating="2">Medium</button>
-                        <button class="rating-btn easy" type="button" data-rating="3">Easy</button>
-                    </div>
-
-                    <section class="adaptive-help-panel" id="adaptiveHelpPanel" hidden aria-labelledby="adaptiveHelpTitle">
-                        <div class="adaptive-help-header">
-                            <div>
-                                <p class="section-kicker">Adaptive support</p>
-                                <h3 id="adaptiveHelpTitle">Unlocked for this card</h3>
-                            </div>
-                            <span class="study-ai-badge" id="adaptiveHelpBadge">Trouble card</span>
-                        </div>
-
-                        <p class="adaptive-help-status" id="adaptiveHelpStatus">Extra help will appear here after repeated struggle.</p>
-                        <button class="study-ai-setup-toggle adaptive-help-toggle" type="button" id="adaptiveHelpToggleBtn" aria-pressed="false">
-                            Turn On Adaptive AI Support
-                        </button>
-                        <div class="adaptive-help-grid" id="adaptiveHelpContent"></div>
-                    </section>
-
-                    <button class="study-helper-toggle" type="button" id="toggleStudyAiBtn" aria-expanded="false" aria-controls="studyAiHelper">
-                        Open AI Helper
-                    </button>
-
-                    <section class="study-ai-helper" id="studyAiHelper" aria-labelledby="studyAiTitle" hidden>
-                        <div class="study-ai-header">
-                            <div>
-                                <p class="section-kicker">AI helper</p>
-                                <h3 id="studyAiTitle">Ask about this card</h3>
-                            </div>
-                            <span class="study-ai-badge">Current card context</span>
-                        </div>
-
-                        <p class="study-ai-status" id="studyAiStatus">Set up AI below to ask about this card.</p>
-                        <button class="study-ai-setup-toggle" type="button" id="studyAiSetupToggleBtn" hidden aria-expanded="true" aria-controls="studyAiKeyForm">
-                            Hide key setup
                         </button>
 
-                        <form class="study-ai-setup" id="studyAiKeyForm" hidden>
-                            <label class="field-label" for="studyAiApiKey">Use your own OpenAI API key</label>
-                            <div class="field-inline study-ai-key-inline">
-                                <input
-                                    type="password"
-                                    id="studyAiApiKey"
-                                    class="study-ai-key-input"
-                                    placeholder="Paste your own OpenAI API key"
-                                >
-                                <button class="secondary-btn compact-btn" type="submit">Use My Key</button>
-                            </div>
-                            <div class="field-actions">
-                                <button class="ghost-inline-btn" type="button" id="clearStudyAiApiKeyBtn">Forget Tab Key</button>
-                            </div>
-                            <p class="helper-text" id="studyAiKeyHelp">Use a tab-only key here if the server key is not configured.</p>
-                        </form>
-
-                        <textarea
-                            id="studyAiQuestion"
-                            class="study-ai-input"
-                            rows="3"
-                            placeholder="Ask for a simpler explanation, an example, or a memory trick."
-                            aria-label="Ask AI about the current study card"
-                        ></textarea>
-
-                        <div class="study-ai-footer">
-                            <p class="helper-text">The AI gets this card's question and answer with your question.</p>
-                            <button class="secondary-btn compact-btn" type="button" id="askStudyAiBtn">Ask AI</button>
+                        <div class="study-mode-toggle" id="studyModeToggle" role="tablist" aria-label="Study mode">
+                            <button class="study-mode-btn active" type="button" data-study-mode="flip" aria-selected="true">Flip</button>
+                            <button class="study-mode-btn" type="button" data-study-mode="type" aria-selected="false">Type Answer</button>
+                            <button class="study-mode-btn" type="button" data-study-mode="multiple-choice" aria-selected="false">Multiple Choice</button>
                         </div>
 
-                        <div class="study-ai-response" id="studyAiResponse" hidden></div>
-                    </section>
+                        <p class="study-hint" id="studyHint">Flip the card, answer it in your head, then rate how it felt.</p>
 
-                    <section class="study-summary" id="studySummary" hidden>
-                        <p class="section-kicker">Session complete</p>
-                        <h3>You cleared this set.</h3>
-                        <p id="studySummaryText">Run it again for another pass, or head back to your library for a different set.</p>
-                        <div class="summary-actions">
-                            <button class="primary-btn" type="button" id="studyAgainBtn">Study Again</button>
-                            <button class="secondary-btn" type="button" id="reviewTroubleBtn" hidden>Review Trouble Cards</button>
-                            <button class="secondary-btn" type="button" id="returnToLibraryBtn">Back to Library</button>
+                        <section class="study-interaction" id="studyInteraction" hidden>
+                            <div class="study-answer-panel" id="typeAnswerPanel" hidden>
+                                <label class="field-label" for="typeAnswerInput">Type your answer</label>
+                                <div class="study-answer-row">
+                                    <input
+                                        type="text"
+                                        id="typeAnswerInput"
+                                        class="study-answer-input"
+                                        placeholder="Write what you remember, then submit"
+                                        autocomplete="off"
+                                    >
+                                    <button class="secondary-btn compact-btn" type="button" id="submitTypeAnswerBtn">Check Answer</button>
+                                </div>
+                                <p class="study-answer-feedback" id="typeAnswerFeedback" hidden></p>
+                            </div>
+
+                            <div class="study-answer-panel" id="multipleChoicePanel" hidden>
+                                <p class="study-mc-status" id="multipleChoiceStatus">Choose the best answer.</p>
+                                <div class="study-mc-options" id="multipleChoiceOptions"></div>
+                                <p class="study-answer-feedback" id="multipleChoiceFeedback" hidden></p>
+                            </div>
+                        </section>
+
+                        <div class="study-actions" id="studyActions">
+                            <button class="rating-btn hard" type="button" data-rating="1">Hard</button>
+                            <button class="rating-btn medium" type="button" data-rating="2">Medium</button>
+                            <button class="rating-btn easy" type="button" data-rating="3">Easy</button>
                         </div>
-                    </section>
+
+                        <section class="adaptive-help-panel" id="adaptiveHelpPanel" hidden aria-labelledby="adaptiveHelpTitle">
+                            <div class="adaptive-help-header">
+                                <div>
+                                    <p class="section-kicker">Adaptive support</p>
+                                    <h3 id="adaptiveHelpTitle">Unlocked for this card</h3>
+                                </div>
+                                <span class="study-ai-badge" id="adaptiveHelpBadge">Trouble card</span>
+                            </div>
+
+                            <p class="adaptive-help-status" id="adaptiveHelpStatus">Extra help will appear here after repeated struggle.</p>
+                            <button class="study-ai-setup-toggle adaptive-help-toggle" type="button" id="adaptiveHelpToggleBtn" aria-pressed="false">
+                                Turn On Adaptive AI Support
+                            </button>
+                            <div class="adaptive-help-grid" id="adaptiveHelpContent"></div>
+                        </section>
+
+                        <section class="study-summary" id="studySummary" hidden>
+                            <p class="section-kicker">Session complete</p>
+                            <h3>You cleared this set.</h3>
+                            <p id="studySummaryText">Run it again for another pass, or head back to your library for a different set.</p>
+                            <div class="summary-actions">
+                                <button class="primary-btn" type="button" id="studyAgainBtn">Study Again</button>
+                                <button class="secondary-btn" type="button" id="reviewTroubleBtn" hidden>Review Trouble Cards</button>
+                                <button class="secondary-btn" type="button" id="returnToLibraryBtn">Back to Library</button>
+                            </div>
+                        </section>
+                    </div>
+
+                    <aside class="study-helper-rail" aria-label="AI helper panel">
+                        <div class="study-helper-widget">
+                            <button class="study-helper-toggle" type="button" id="toggleStudyAiBtn" aria-expanded="false" aria-controls="studyAiHelper">
+                                Ask AI
+                            </button>
+
+                            <section class="study-ai-helper" id="studyAiHelper" aria-labelledby="studyAiTitle" hidden>
+                                <div class="study-ai-header">
+                                    <div>
+                                        <p class="section-kicker">AI helper</p>
+                                        <h3 id="studyAiTitle">Ask about this card</h3>
+                                    </div>
+                                    <span class="study-ai-badge">Current card context</span>
+                                </div>
+
+                                <div class="study-ai-body">
+                                    <p class="study-ai-status" id="studyAiStatus">Set up AI below to ask about this card.</p>
+                                    <button class="study-ai-setup-toggle" type="button" id="studyAiSetupToggleBtn" hidden aria-expanded="true" aria-controls="studyAiKeyForm">
+                                        Hide key setup
+                                    </button>
+
+                                    <form class="study-ai-setup" id="studyAiKeyForm" hidden>
+                                        <label class="field-label" for="studyAiApiKey">Use your own OpenAI API key</label>
+                                        <div class="field-inline study-ai-key-inline">
+                                            <input
+                                                type="password"
+                                                id="studyAiApiKey"
+                                                class="study-ai-key-input"
+                                                placeholder="Paste your own OpenAI API key"
+                                            >
+                                            <button class="secondary-btn compact-btn" type="submit">Use My Key</button>
+                                        </div>
+                                        <div class="field-actions">
+                                            <button class="ghost-inline-btn" type="button" id="clearStudyAiApiKeyBtn">Forget Tab Key</button>
+                                        </div>
+                                        <p class="helper-text" id="studyAiKeyHelp">Use a tab-only key here if the server key is not configured.</p>
+                                    </form>
+
+                                    <textarea
+                                        id="studyAiQuestion"
+                                        class="study-ai-input"
+                                        rows="3"
+                                        placeholder="Ask for a simpler explanation, an example, or a memory trick."
+                                        aria-label="Ask AI about the current study card"
+                                    ></textarea>
+
+                                    <div class="study-ai-footer">
+                                        <p class="helper-text">The AI gets this card's question and answer with your question.</p>
+                                        <button class="secondary-btn compact-btn" type="button" id="askStudyAiBtn">Ask AI</button>
+                                    </div>
+
+                                    <div class="study-ai-response" id="studyAiResponse" hidden></div>
+                                </div>
+                            </section>
+                        </div>
+                    </aside>
                 </div>
             </main>
         </div>

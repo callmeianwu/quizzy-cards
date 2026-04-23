@@ -13,6 +13,7 @@ class Card {
         this.lastSeenIndex = -1;
         this.hardCount = 0;
         this.easyCount = 0;
+        this.needsEasyConfirmation = false;
         this.cachedDistractors = [];
         this.cachedCloze = "";
         this.aiSupport = null;

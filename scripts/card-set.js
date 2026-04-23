@@ -17,6 +17,7 @@ const STUDY_MODE_OPTIONS = ["flip", "type", "multiple-choice"];
 const AI_CACHE_VERSION = 2;
 const HARD_REINSERT_OFFSETS = [2, 3];
 const MEDIUM_REINSERT_OFFSETS = [5, 6, 7, 8];
+const EASY_CONFIRMATION_REINSERT_OFFSETS = [9, 10, 11, 12];
 const MIN_MULTIPLE_CHOICE_DISTRACTORS = 2;
 const MAX_MULTIPLE_CHOICE_DISTRACTORS = 3;
 const MAX_SET_TITLE_LENGTH = 120;
@@ -55,10 +56,12 @@ const state = {
     currentStreak: 0,
     bestStreak: 0,
     streakPulseTimeoutId: 0,
+    sessionSeenCardIds: [],
     sessionCompletedCardIds: [],
     troublePile: [],
     masteredPile: [],
     adaptiveHelpEnabled: false,
+    currentCardFirstPresentation: false,
     currentCardAttempt: createEmptyCardAttemptState(),
     typeAnswerValue: "",
     typeAnswerResult: null,
@@ -398,13 +401,25 @@ function hydrateCard(rawCard) {
     card.lastSeenIndex = Number.isInteger(rawCard.lastSeenIndex) ? rawCard.lastSeenIndex : -1;
     card.hardCount = Math.max(0, Number(rawCard.hardCount) || 0);
     card.easyCount = Math.max(0, Number(rawCard.easyCount) || 0);
+    card.needsEasyConfirmation = Boolean(rawCard.needsEasyConfirmation) && !card.mastered;
     card.cachedDistractors = sanitizeDistractorList(rawCard.cachedDistractors);
     card.cachedCloze = typeof rawCard.cachedCloze === "string" ? rawCard.cachedCloze.trim() : "";
     card.aiSupport = sanitizeAdaptiveHelp(rawCard.aiSupport);
     card.aiCache = sanitizeAiCache(rawCard.aiCache, card);
     syncLegacyCardCacheFields(card);
     invalidateCardCacheIfNeeded(card);
+    normalizeLegacyEasyMastery(card);
     return card;
+}
+
+function normalizeLegacyEasyMastery(card) {
+    if (!card || !card.mastered || card.easyCount >= 2) {
+        return;
+    }
+
+    card.mastered = false;
+    card.needsEasyConfirmation = false;
+    card.nextReview = new Date();
 }
 
 function sanitizeStudySections(entries, cardCount) {
@@ -1442,6 +1457,11 @@ async function rateCard(difficulty) {
     updateStruggleTracking(currentCard);
     removeCurrentCardFromQueue();
     reinsertCardByDifficulty(set, currentCard, state.currentCardIndex, difficulty);
+    state.activeCardId = "";
+
+    if (difficulty === 3 && currentCard.needsEasyConfirmation) {
+        showToast("Nice start. This card will pop up once more before it counts as mastered.", "info");
+    }
 
     state.currentCardIndex = state.studyQueue[0] ?? -1;
     state.studyComplete = state.studyQueue.length === 0;
@@ -1476,10 +1496,12 @@ function resetStudyRoundState() {
     state.roundPresentationCount = 0;
     state.activeCardId = "";
     state.currentStreak = 0;
+    state.sessionSeenCardIds = [];
     state.sessionCompletedCardIds = [];
     state.troublePile = [];
     state.masteredPile = [];
     state.adaptiveHelpEnabled = false;
+    state.currentCardFirstPresentation = false;
     resetCurrentCardAttempt();
     state.typeAnswerValue = "";
     state.typeAnswerResult = null;
@@ -1489,6 +1511,11 @@ function resetStudyRoundState() {
 }
 
 function updateCardAfterRating(card, difficulty) {
+    const wasPendingEasyConfirmation = Boolean(card.needsEasyConfirmation);
+    const shouldRequireEasyConfirmation = difficulty === 3
+        && !wasPendingEasyConfirmation
+        && state.currentCardFirstPresentation;
+
     card.attempts += 1;
     card.level = Math.max(0, card.level + getLevelDeltaForDifficulty(difficulty));
     card.difficultyScore = Math.max(0, card.difficultyScore + getDifficultyDelta(difficulty));
@@ -1496,6 +1523,7 @@ function updateCardAfterRating(card, difficulty) {
     if (difficulty === 1) {
         card.hardCount += 1;
         card.mastered = false;
+        card.needsEasyConfirmation = false;
     }
 
     if (difficulty === 3) {
@@ -1503,7 +1531,17 @@ function updateCardAfterRating(card, difficulty) {
         card.difficultyScore = Math.max(0, card.difficultyScore - 2);
     }
 
-    card.mastered = difficulty === 3 || (difficulty !== 1 && card.level >= 3);
+    if (shouldRequireEasyConfirmation) {
+        card.needsEasyConfirmation = true;
+        card.mastered = false;
+    } else if (difficulty === 3) {
+        card.needsEasyConfirmation = false;
+        card.mastered = true;
+    } else {
+        card.needsEasyConfirmation = false;
+        card.mastered = card.level >= 3;
+    }
+
     card.nextReview = calculateNextReviewDate(card, difficulty);
 }
 
@@ -1530,6 +1568,10 @@ function calculateNextReviewDate(card, difficulty) {
         return new Date(now + 8 * 60 * 60 * 1000);
     }
 
+    if (card.needsEasyConfirmation) {
+        return new Date(now);
+    }
+
     const easyDays = Math.max(1, card.level + 1);
     return new Date(now + easyDays * 24 * 60 * 60 * 1000);
 }
@@ -1545,6 +1587,13 @@ function removeCurrentCardFromQueue() {
 
 function reinsertCardByDifficulty(set, card, cardIndex, difficulty) {
     if (difficulty === 3) {
+        if (card.needsEasyConfirmation) {
+            const offset = getEasyConfirmationReinsertOffset(card);
+            const insertAt = Math.min(offset, state.studyQueue.length);
+            state.studyQueue.splice(insertAt, 0, cardIndex);
+            return;
+        }
+
         addUniqueValue(state.sessionCompletedCardIds, card.id);
         return;
     }
@@ -1558,12 +1607,21 @@ function reinsertCardByDifficulty(set, card, cardIndex, difficulty) {
     }
 }
 
+function getEasyConfirmationReinsertOffset(card) {
+    const seed = getQueueSeed(card);
+    return EASY_CONFIRMATION_REINSERT_OFFSETS[seed % EASY_CONFIRMATION_REINSERT_OFFSETS.length];
+}
+
 function getQueueReinsertOffset(card, difficulty) {
     const offsets = difficulty === 1 ? HARD_REINSERT_OFFSETS : MEDIUM_REINSERT_OFFSETS;
-    const seed = Array.from(String(card.id || card.question))
-        .reduce((total, character) => total + character.charCodeAt(0), 0);
+    const seed = getQueueSeed(card);
 
     return offsets[seed % offsets.length];
+}
+
+function getQueueSeed(card) {
+    return Array.from(String(card.id || card.question))
+        .reduce((total, character) => total + character.charCodeAt(0), 0);
 }
 
 function updateStruggleTracking(card) {
@@ -1810,6 +1868,8 @@ function prepareStudyCardPresentation(card) {
         return;
     }
 
+    state.currentCardFirstPresentation = !state.sessionSeenCardIds.includes(card.id);
+    addUniqueValue(state.sessionSeenCardIds, card.id);
     state.activeCardId = card.id;
     state.roundStep += 1;
     state.roundPresentationCount += 1;
@@ -2035,7 +2095,7 @@ function renderAdaptiveHelp(card) {
         return;
     }
 
-    if (card.mastered) {
+    if (card.mastered || card.needsEasyConfirmation) {
         dom.adaptiveHelpPanel.hidden = true;
         dom.adaptiveHelpContent.innerHTML = "";
         dom.adaptiveHelpStatus.textContent = "";
@@ -2812,7 +2872,10 @@ async function getOrCreateAdaptiveHelp(card) {
 }
 
 async function maybeUnlockAdaptiveHelp(card, set, options = {}) {
-    if (!card || card.hardCount < 2) {
+    if (!card || card.hardCount < 2 || card.needsEasyConfirmation) {
+        if (card && isCurrentStudyCard(card.id)) {
+            renderAdaptiveHelp(card);
+        }
         return;
     }
 
